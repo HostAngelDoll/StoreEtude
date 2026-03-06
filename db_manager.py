@@ -9,6 +9,12 @@ def get_db_connection(db_path):
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
+def get_yearly_db_path(year):
+    px = int(year) - 2003
+    px_str = f"{px:02d}"
+    year_dir = os.path.join(BASE_DIR_PATH, str(year), f"{px_str}. identity_propeties")
+    return os.path.join(year_dir, "le_etude_base.db")
+
 def init_global_db():
     conn = get_db_connection(GLOBAL_DB_PATH)
     cursor = conn.cursor()
@@ -16,6 +22,7 @@ def init_global_db():
     # T_Type_Catalog_Reg
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS T_Type_Catalog_Reg (
+        idx INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT,
         category TEXT,
         description TEXT
@@ -66,17 +73,20 @@ def init_global_db():
 
 def init_yearly_dbs():
     # Only if E:\ exists or the BASE_DIR_PATH exists
-    if not os.path.exists(os.path.splitdrive(BASE_DIR_PATH)[0] + "\\") and not os.path.exists(BASE_DIR_PATH):
-        print(f"Base path {BASE_DIR_PATH} not found. Skipping yearly databases.")
-        return
+    drive = os.path.splitdrive(BASE_DIR_PATH)[0]
+    if drive and not os.path.exists(drive + "\\"):
+         # Skip if drive doesn't exist
+         return
+
+    if not os.path.exists(BASE_DIR_PATH):
+        try:
+            os.makedirs(BASE_DIR_PATH)
+        except:
+            return
 
     for year in range(2004, 2027):
-        px = year - 2003
-        px_str = f"{px:02d}"
-
-        # Path: E:\_Internal\[year]\[px]. identity_propeties\le_etude_base.db
-        year_dir = os.path.join(BASE_DIR_PATH, str(year), f"{px_str}. identity_propeties")
-        db_path = os.path.join(year_dir, "le_etude_base.db")
+        db_path = get_yearly_db_path(year)
+        year_dir = os.path.dirname(db_path)
 
         if not os.path.exists(year_dir):
             try:
