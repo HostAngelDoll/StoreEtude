@@ -2,6 +2,7 @@ import sys
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QTabWidget, QLabel, QPushButton, QHBoxLayout)
 from PyQt6.QtCore import Qt
+from db_manager import init_databases
 
 class PrecureManagerApp(QMainWindow):
     def __init__(self):
@@ -61,6 +62,9 @@ class PrecureManagerApp(QMainWindow):
         self.tabs.addTab(tab, "Temporadas")
 
 if __name__ == "__main__":
+    # Inicializar bases de datos
+    init_databases()
+
     app = QApplication(sys.argv)
     
     # Aplicar un estilo básico (opcional, Jules puede mejorarlo después)
