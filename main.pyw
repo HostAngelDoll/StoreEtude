@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QComboBox, QPlainTextEdit, QMenuBar, QMenu, QInputDialog,
                              QSplitter)
 from PyQt6.QtCore import Qt, QStringListModel
-from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QCursor, QTextCharFormat, QColor
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QCursor, QTextCharFormat, QColor, QTextCursor
 from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord, QSqlQuery
 
 from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path
@@ -202,7 +202,7 @@ class DataTableTab(QWidget):
         self.layout.addLayout(self.btn_layout)
 
     def log(self, message, is_error=False):
-        self.log_viewer.moveCursor(Qt.MoveOperation.End)
+        self.log_viewer.moveCursor(QTextCursor.MoveOperation.End)
         fmt = QTextCharFormat()
         if is_error:
             fmt.setForeground(QColor("red"))
@@ -213,7 +213,7 @@ class DataTableTab(QWidget):
 
         self.log_viewer.setCurrentCharFormat(fmt)
         self.log_viewer.insertPlainText(f"{prefix}{message}\n")
-        self.log_viewer.moveCursor(Qt.MoveOperation.End)
+        self.log_viewer.moveCursor(QTextCursor.MoveOperation.End)
 
     def add_record(self):
         form = DatabaseForm(self.model, parent=self)
