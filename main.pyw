@@ -5,10 +5,10 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTreeView, QHeaderView, QDockWidget, QTableView,
                              QAbstractItemView, QDialog, QFormLayout, QLineEdit,
                              QSpinBox, QCheckBox, QDialogButtonBox, QMessageBox,
-                             QComboBox)
+                             QComboBox, QPlainTextEdit, QMenuBar)
 from PyQt6.QtCore import Qt, QStringListModel
-from PyQt6.QtGui import QStandardItemModel, QStandardItem
-from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction
+from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord, QSqlQuery
 
 from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path
 
@@ -26,13 +26,11 @@ class DatabaseForm(QDialog):
 
         for i in range(self.record.count()):
             field_name = self.record.fieldName(i)
-            # Skip auto-increment columns if adding new
             if field_name.lower() == "idx" and row < 0:
                 continue
 
             label = field_name.replace("_", " ").title()
 
-            # Basic widget type detection
             if "is_" in field_name.lower():
                 widget = QCheckBox()
                 if row >= 0:
@@ -104,6 +102,7 @@ class DataTableTab(QWidget):
         self.view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
+        # CRUD Buttons
         self.btn_layout = QHBoxLayout()
         self.btn_add = QPushButton("Añadir")
         self.btn_edit = QPushButton("Editar")
@@ -117,8 +116,18 @@ class DataTableTab(QWidget):
         self.btn_layout.addWidget(self.btn_edit)
         self.btn_layout.addWidget(self.btn_delete)
 
+        # SQL Console
+        self.console_label = QLabel("SQL Script:")
+        self.sql_console = QPlainTextEdit()
+        self.sql_console.setMaximumHeight(80)
+        self.btn_run_sql = QPushButton("Ejecutar SQL")
+        self.btn_run_sql.clicked.connect(self.run_sql_script)
+
         self.layout.addWidget(self.view)
         self.layout.addLayout(self.btn_layout)
+        self.layout.addWidget(self.console_label)
+        self.layout.addWidget(self.sql_console)
+        self.layout.addWidget(self.btn_run_sql)
 
     def add_record(self):
         form = DatabaseForm(self.model, parent=self)
@@ -142,6 +151,20 @@ class DataTableTab(QWidget):
         else:
             QMessageBox.warning(self, "Selección", "Por favor selecciona una fila.")
 
+    def run_sql_script(self):
+        script = self.sql_console.toPlainText().strip()
+        if not script:
+            return
+
+        db = QSqlDatabase.database(self.db_conn_name)
+        query = QSqlQuery(db)
+        if query.exec(script):
+            QMessageBox.information(self, "SQL", "Script ejecutado con éxito.")
+            self.model.select()
+            self.sql_console.clear()
+        else:
+            QMessageBox.critical(self, "Error SQL", f"Error al ejecutar script: {query.lastError().text()}")
+
     def update_database(self, db_conn_name):
         self.db_conn_name = db_conn_name
         self.model = QSqlTableModel(self, QSqlDatabase.database(db_conn_name))
@@ -154,63 +177,82 @@ class PrecureManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Precure Media Manager - Core System")
-        self.setGeometry(100, 100, 1100, 700)
+        self.setGeometry(100, 100, 1200, 800)
 
         self.init_db_connections()
+        self.init_menu_bar()
         
-        # Main Layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         self.main_layout = QHBoxLayout(central_widget)
         
+        # Sidebar (Left) - Initialized before tabs to be on the left in the layout
+        self.init_sidebar()
+
         # Tabs
         self.tabs = QTabWidget()
-        self.main_layout.addWidget(self.tabs, 3) # Left side with more weight
+        self.main_layout.addWidget(self.tabs, 4)
         
-        # Yearly Tabs
-        self.resources_tab = DataTableTab("year_db", "T_Resources")
+        # Reordered Tabs: 1. Registry, 2. Resources, 3. Global, 4. Seasons
         self.registry_tab = DataTableTab("year_db", "T_Registry")
-        
-        # Global Tabs
+        self.resources_tab = DataTableTab("year_db", "T_Resources")
         self.seasons_tab = DataTableTab("global_db", "T_Seasons")
+
+        # Global Sub-tabs
+        self.global_tab_container = QWidget()
+        global_layout = QVBoxLayout(self.global_tab_container)
+        self.global_subtabs = QTabWidget()
+
         self.catalog_tab = DataTableTab("global_db", "T_Type_Catalog_Reg")
         self.opener_tab = DataTableTab("global_db", "T_Opener_Models")
         self.type_res_tab = DataTableTab("global_db", "T_Type_Resources")
         
-        self.tabs.addTab(self.resources_tab, "Recursos")
-        self.tabs.addTab(self.registry_tab, "Registros")
-        self.tabs.addTab(self.seasons_tab, "Temporadas")
-        self.tabs.addTab(self.catalog_tab, "Catálogo")
-        self.tabs.addTab(self.opener_tab, "Modelos Opener")
-        self.tabs.addTab(self.type_res_tab, "Tipos Recursos")
+        self.global_subtabs.addTab(self.catalog_tab, "Catálogo")
+        self.global_subtabs.addTab(self.opener_tab, "Modelos Opener")
+        self.global_subtabs.addTab(self.type_res_tab, "Tipos Recursos")
+        global_layout.addWidget(self.global_subtabs)
 
-        # Sidebar (Right)
-        self.init_sidebar()
+        self.tabs.addTab(self.registry_tab, "Registros")
+        self.tabs.addTab(self.resources_tab, "Recursos")
+        self.tabs.addTab(self.global_tab_container, "Global")
+        self.tabs.addTab(self.seasons_tab, "Temporadas")
+
+    def init_menu_bar(self):
+        menubar = self.menuBar()
+
+        # Archivo
+        file_menu = menubar.addMenu("Archivo")
+        exit_action = QAction("Salir", self)
+        exit_action.triggered.connect(self.close)
+        file_menu.addAction(exit_action)
+
+        # Ayuda
+        help_menu = menubar.addMenu("Ayuda")
+        about_action = QAction("Acerca de", self)
+        about_action.triggered.connect(lambda: QMessageBox.information(self, "Ayuda", "Precure Media Manager v1.0\nSistema de gestión de recursos."))
+        help_menu.addAction(about_action)
 
     def init_db_connections(self):
-        # Global DB
         if not QSqlDatabase.contains("global_db"):
             db = QSqlDatabase.addDatabase("QSQLITE", "global_db")
             db.setDatabaseName(GLOBAL_DB_PATH)
-            if not db.open():
-                print("Could not open global database")
+            db.open()
 
-        # Yearly DB (placeholder for now)
         if not QSqlDatabase.contains("year_db"):
             db = QSqlDatabase.addDatabase("QSQLITE", "year_db")
-            # Default to 2004
             db.setDatabaseName(get_yearly_db_path(2004))
             db.open()
 
     def init_sidebar(self):
-        dock = QDockWidget("Años", self)
-        dock.setAllowedAreas(Qt.DockWidgetArea.RightDockWidgetArea)
-        
+        # We can use a DockWidget but to ensure it is on the left by default in this task:
+        self.dock = QDockWidget("Años", self)
+        self.dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
+
         self.year_tree = QTreeView()
         self.year_tree.setHeaderHidden(True)
         self.year_model = QStandardItemModel()
         root_node = self.year_model.invisibleRootItem()
-        
+
         for year in range(2004, 2027):
             item = QStandardItem(str(year))
             item.setEditable(False)
@@ -218,15 +260,14 @@ class PrecureManagerApp(QMainWindow):
 
         self.year_tree.setModel(self.year_model)
         self.year_tree.clicked.connect(self.on_year_selected)
-        
-        dock.setWidget(self.year_tree)
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+
+        self.dock.setWidget(self.year_tree)
+        self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dock)
 
     def on_year_selected(self, index):
         year = index.data()
         db_path = get_yearly_db_path(year)
 
-        # Re-open year_db with new path
         db = QSqlDatabase.database("year_db")
         db.close()
         db.setDatabaseName(db_path)
