@@ -108,7 +108,8 @@ class ColumnHeaderView(QHeaderView):
         if not action:
             return
 
-        table_tab = self.parent().parent() # QTableView -> DataTableTab
+        # Hierarchy: ColumnHeaderView -> QTableView -> QSplitter -> DataTableTab
+        table_tab = self.parent().parent().parent()
         if action == add_left:
             table_tab.add_column(logical_index)
         elif action == add_right:
