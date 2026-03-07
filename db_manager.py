@@ -61,11 +61,11 @@ def init_global_db():
         precure_season_name TEXT PRIMARY KEY,
         japanese_name TEXT,
         romaji_name TEXT,
-        total_episode INTEGER,
+        episode_total INTEGER,
         theme_description TEXT,
         release_date TEXT,
         path_master TEXT
-    )
+    );
     """)
 
     conn.commit()
