@@ -32,7 +32,8 @@ def init_global_db():
     # T_Opener_Models
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS T_Opener_Models (
-        model_name TEXT PRIMARY KEY,
+        id_model INTEGER PRIMARY KEY AUTOINCREMENT,
+        model_name TEXT,
         start_validity_overwrite TEXT,
         end_validity_overwrite TEXT,
         start_validity_locally TEXT,
