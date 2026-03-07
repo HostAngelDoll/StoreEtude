@@ -153,18 +153,36 @@ class DataTableTab(QWidget):
         self.btn_layout.addWidget(self.btn_edit)
         self.btn_layout.addWidget(self.btn_delete)
 
-        # SQL Console
-        self.console_label = QLabel("SQL Script:")
+        # SQL Console Area
+        self.console_area = QWidget()
+        self.console_layout = QVBoxLayout(self.console_area)
+
+        self.console_label = QLabel("SQL Script Console:")
         self.sql_console = QPlainTextEdit()
         self.sql_console.setMaximumHeight(80)
+
+        self.log_label = QLabel("SQL Result Log:")
+        self.log_viewer = QPlainTextEdit()
+        self.log_viewer.setReadOnly(True)
+        self.log_viewer.setMaximumHeight(100)
+        self.log_viewer.setStyleSheet("background-color: #f0f0f0; color: #333;")
+
         self.btn_run_sql = QPushButton("Ejecutar SQL")
         self.btn_run_sql.clicked.connect(self.run_sql_script)
 
+        self.console_layout.addWidget(self.console_label)
+        self.console_layout.addWidget(self.sql_console)
+        self.console_layout.addWidget(self.log_label)
+        self.console_layout.addWidget(self.log_viewer)
+        self.console_layout.addWidget(self.btn_run_sql)
+
         self.layout.addWidget(self.view)
         self.layout.addLayout(self.btn_layout)
-        self.layout.addWidget(self.console_label)
-        self.layout.addWidget(self.sql_console)
-        self.layout.addWidget(self.btn_run_sql)
+        self.layout.addWidget(self.console_area)
+
+    def log(self, message, is_error=False):
+        prefix = "[ERROR] " if is_error else "[INFO] "
+        self.log_viewer.appendPlainText(f"{prefix}{message}")
 
     def add_record(self):
         form = DatabaseForm(self.model, parent=self)
@@ -196,7 +214,7 @@ class DataTableTab(QWidget):
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         if query.exec(script):
-            QMessageBox.information(self, "SQL", "Script ejecutado con éxito.")
+            self.log(f"Ejecutado: {script[:50]}...")
 
             # Detect CREATE TABLE or DROP TABLE
             create_match = re.search(r"CREATE\s+TABLE\s+(\w+)", script, re.IGNORECASE)
@@ -206,16 +224,19 @@ class DataTableTab(QWidget):
                 new_table = create_match.group(1)
                 self.table_name = new_table
                 self.model.setTable(new_table)
-                print(f"Table linked to new table: {new_table}")
+                self.log(f"Vista vinculada a nueva tabla: {new_table}")
             elif drop_match:
                 dropped_table = drop_match.group(1)
                 if dropped_table.lower() == self.table_name.lower():
                     self.model.clear()
+                    self.log(f"Tabla activa '{dropped_table}' eliminada. Vista limpiada.")
 
             self.model.select()
             self.sql_console.clear()
         else:
-            QMessageBox.critical(self, "Error SQL", f"Error al ejecutar script: {query.lastError().text()}")
+            err_msg = query.lastError().text()
+            self.log(f"Error: {err_msg}", is_error=True)
+            QMessageBox.critical(self, "Error SQL", f"Error al ejecutar script: {err_msg}")
 
     def add_column(self, position):
         col_name, ok = QInputDialog.getText(self, "Nueva Columna", "Nombre de la columna:")
@@ -225,18 +246,15 @@ class DataTableTab(QWidget):
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
 
-        # SQLite natively only supports appending columns at the end.
-        # To avoid schema destruction (loss of PKs, constraints), we will only allow appending for now.
-        # If position is not at the end, we inform the user.
         current_cols_count = self.model.record().count()
-
         if query.exec(f"ALTER TABLE {self.table_name} ADD COLUMN {col_name} TEXT"):
+            self.log(f"Columna '{col_name}' añadida.")
             self.model.select()
             if position < current_cols_count:
                 QMessageBox.information(self, "Columna Añadida",
                     "Nota: SQLite solo permite añadir columnas al final. La columna se ha añadido al final de la tabla.")
         else:
-            QMessageBox.critical(self, "Error", f"No se pudo añadir la columna: {query.lastError().text()}")
+            self.log(f"Error añadiendo columna: {query.lastError().text()}", is_error=True)
 
     def rename_column(self, index):
         old_name = self.model.record().fieldName(index)
@@ -246,9 +264,18 @@ class DataTableTab(QWidget):
 
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
-        if query.exec(f"ALTER TABLE {self.table_name} RENAME COLUMN {old_name} TO {new_name}"):
+
+        # Ensure we are not in the middle of a transaction
+        self.model.submitAll()
+
+        sql = f'ALTER TABLE "{self.table_name}" RENAME COLUMN "{old_name}" TO "{new_name}"'
+        if query.exec(sql):
+            self.log(f"Columna '{old_name}' renombrada a '{new_name}'.")
+            # We MUST reset the model to pick up the schema change properly
+            self.model.setTable(self.table_name)
             self.model.select()
         else:
+            self.log(f"Error renombrando columna: {query.lastError().text()}", is_error=True)
             QMessageBox.critical(self, "Error", f"No se pudo renombrar la columna: {query.lastError().text()}")
 
     def delete_column(self, index):
@@ -259,9 +286,11 @@ class DataTableTab(QWidget):
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         if query.exec(f"ALTER TABLE {self.table_name} DROP COLUMN {col_name}"):
+            self.log(f"Columna '{col_name}' eliminada.")
+            self.model.setTable(self.table_name)
             self.model.select()
         else:
-            # Fallback for older SQLite if DROP COLUMN fails (though we have 3.45+)
+            self.log(f"Error eliminando columna: {query.lastError().text()}", is_error=True)
             QMessageBox.critical(self, "Error", f"No se pudo eliminar la columna: {query.lastError().text()}")
 
 
@@ -273,6 +302,9 @@ class DataTableTab(QWidget):
         self.model.select()
         self.view.setModel(self.model)
 
+    def set_console_visible(self, visible):
+        self.console_area.setVisible(visible)
+
 class PrecureManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -280,17 +312,17 @@ class PrecureManagerApp(QMainWindow):
         self.setGeometry(100, 100, 1200, 800)
 
         self.init_db_connections()
-        self.init_menu_bar()
         
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         self.main_layout = QHBoxLayout(central_widget)
-        
+
         self.init_sidebar()
 
         self.tabs = QTabWidget()
         self.main_layout.addWidget(self.tabs, 4)
-        
+
+        # Tabs initialization
         self.registry_tab = DataTableTab("year_db", "T_Registry")
         self.resources_tab = DataTableTab("year_db", "T_Resources")
         self.seasons_tab = DataTableTab("global_db", "T_Seasons")
@@ -302,7 +334,7 @@ class PrecureManagerApp(QMainWindow):
         self.catalog_tab = DataTableTab("global_db", "T_Type_Catalog_Reg")
         self.opener_tab = DataTableTab("global_db", "T_Opener_Models")
         self.type_res_tab = DataTableTab("global_db", "T_Type_Resources")
-        
+
         self.global_subtabs.addTab(self.catalog_tab, "Catálogo")
         self.global_subtabs.addTab(self.opener_tab, "Modelos Opener")
         self.global_subtabs.addTab(self.type_res_tab, "Tipos Recursos")
@@ -313,17 +345,46 @@ class PrecureManagerApp(QMainWindow):
         self.tabs.addTab(self.global_tab_container, "Global")
         self.tabs.addTab(self.seasons_tab, "Temporadas")
 
+        self.init_menu_bar()
+
     def init_menu_bar(self):
         menubar = self.menuBar()
+
+        # Archivo
         file_menu = menubar.addMenu("Archivo")
         exit_action = QAction("Salir", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
+        # Vista
+        view_menu = menubar.addMenu("Vista")
+        panels_submenu = view_menu.addMenu("Mostrar Paneles")
+
+        toggle_sidebar = QAction("Años", self, checkable=True)
+        toggle_sidebar.setChecked(True)
+        toggle_sidebar.triggered.connect(lambda: self.dock.setVisible(toggle_sidebar.isChecked()))
+        panels_submenu.addAction(toggle_sidebar)
+
+        toggle_console = QAction("Consola SQL", self, checkable=True)
+        toggle_console.setChecked(True)
+        toggle_console.triggered.connect(self.toggle_sql_consoles)
+        panels_submenu.addAction(toggle_console)
+
+        # Ayuda
         help_menu = menubar.addMenu("Ayuda")
         about_action = QAction("Acerca de", self)
         about_action.triggered.connect(lambda: QMessageBox.information(self, "Ayuda", "Precure Media Manager v1.0\nSistema de gestión de recursos."))
         help_menu.addAction(about_action)
+
+    def toggle_sql_consoles(self):
+        is_visible = self.sender().isChecked()
+        # Find all DataTableTab instances and toggle consoles
+        self.registry_tab.set_console_visible(is_visible)
+        self.resources_tab.set_console_visible(is_visible)
+        self.seasons_tab.set_console_visible(is_visible)
+        self.catalog_tab.set_console_visible(is_visible)
+        self.opener_tab.set_console_visible(is_visible)
+        self.type_res_tab.set_console_visible(is_visible)
 
     def init_db_connections(self):
         if not QSqlDatabase.contains("global_db"):
