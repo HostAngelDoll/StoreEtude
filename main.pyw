@@ -6,9 +6,10 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTreeView, QHeaderView, QDockWidget, QTableView,
                              QAbstractItemView, QDialog, QFormLayout, QLineEdit,
                              QSpinBox, QCheckBox, QDialogButtonBox, QMessageBox,
-                             QComboBox, QPlainTextEdit, QMenuBar, QMenu, QInputDialog)
+                             QComboBox, QPlainTextEdit, QMenuBar, QMenu, QInputDialog,
+                             QSplitter)
 from PyQt6.QtCore import Qt, QStringListModel
-from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QCursor
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QCursor, QTextCharFormat, QColor
 from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord, QSqlQuery
 
 from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path
@@ -36,7 +37,7 @@ class DatabaseForm(QDialog):
                 widget = QCheckBox()
                 if row >= 0:
                     widget.setChecked(bool(self.record.value(i)))
-            elif "total_" in field_name.lower() or "_num" in field_name.lower():
+            elif "total_" in field_name.lower() or "_num" in field_name.lower() or "episode_" in field_name.lower():
                 widget = QSpinBox()
                 widget.setRange(0, 9999)
                 if row >= 0:
@@ -153,36 +154,66 @@ class DataTableTab(QWidget):
         self.btn_layout.addWidget(self.btn_edit)
         self.btn_layout.addWidget(self.btn_delete)
 
+        # Main Splitter for Table and Console
+        self.main_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.main_splitter.addWidget(self.view)
+
         # SQL Console Area
         self.console_area = QWidget()
         self.console_layout = QVBoxLayout(self.console_area)
+        self.console_layout.setContentsMargins(0, 5, 0, 0)
 
-        self.console_label = QLabel("SQL Script Console:")
+        # Splitter for SQL Command and Log
+        self.sql_splitter = QSplitter(Qt.Orientation.Horizontal)
+
+        # Left side: Command
+        self.cmd_container = QWidget()
+        cmd_layout = QVBoxLayout(self.cmd_container)
+        cmd_layout.setContentsMargins(0,0,0,0)
+        cmd_layout.addWidget(QLabel("SQL Commands:"))
         self.sql_console = QPlainTextEdit()
-        self.sql_console.setMaximumHeight(80)
+        cmd_layout.addWidget(self.sql_console)
 
-        self.log_label = QLabel("SQL Result Log:")
+        # Right side: Log
+        self.log_container = QWidget()
+        log_layout = QVBoxLayout(self.log_container)
+        log_layout.setContentsMargins(0,0,0,0)
+        log_layout.addWidget(QLabel("SQL Log:"))
         self.log_viewer = QPlainTextEdit()
         self.log_viewer.setReadOnly(True)
-        self.log_viewer.setMaximumHeight(100)
-        self.log_viewer.setStyleSheet("background-color: #f0f0f0; color: #333;")
+        # Dark theme for log viewer
+        self.log_viewer.setStyleSheet("background-color: black; color: white; font-family: Consolas, monospace;")
+        log_layout.addWidget(self.log_viewer)
+
+        self.sql_splitter.addWidget(self.cmd_container)
+        self.sql_splitter.addWidget(self.log_container)
 
         self.btn_run_sql = QPushButton("Ejecutar SQL")
         self.btn_run_sql.clicked.connect(self.run_sql_script)
 
-        self.console_layout.addWidget(self.console_label)
-        self.console_layout.addWidget(self.sql_console)
-        self.console_layout.addWidget(self.log_label)
-        self.console_layout.addWidget(self.log_viewer)
+        self.console_layout.addWidget(self.sql_splitter)
         self.console_layout.addWidget(self.btn_run_sql)
 
-        self.layout.addWidget(self.view)
+        self.main_splitter.addWidget(self.console_area)
+        self.main_splitter.setStretchFactor(0, 3)
+        self.main_splitter.setStretchFactor(1, 1)
+
+        self.layout.addWidget(self.main_splitter)
         self.layout.addLayout(self.btn_layout)
-        self.layout.addWidget(self.console_area)
 
     def log(self, message, is_error=False):
-        prefix = "[ERROR] " if is_error else "[INFO] "
-        self.log_viewer.appendPlainText(f"{prefix}{message}")
+        self.log_viewer.moveCursor(Qt.MoveOperation.End)
+        fmt = QTextCharFormat()
+        if is_error:
+            fmt.setForeground(QColor("red"))
+            prefix = "[ERROR] "
+        else:
+            fmt.setForeground(QColor("white"))
+            prefix = "[INFO] "
+
+        self.log_viewer.setCurrentCharFormat(fmt)
+        self.log_viewer.insertPlainText(f"{prefix}{message}\n")
+        self.log_viewer.moveCursor(Qt.MoveOperation.End)
 
     def add_record(self):
         form = DatabaseForm(self.model, parent=self)
@@ -214,7 +245,7 @@ class DataTableTab(QWidget):
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         if query.exec(script):
-            self.log(f"Ejecutado: {script[:50]}...")
+            self.log(f"Ejecutado con éxito.")
 
             # Detect CREATE TABLE or DROP TABLE
             create_match = re.search(r"CREATE\s+TABLE\s+(\w+)", script, re.IGNORECASE)
@@ -236,7 +267,6 @@ class DataTableTab(QWidget):
         else:
             err_msg = query.lastError().text()
             self.log(f"Error: {err_msg}", is_error=True)
-            QMessageBox.critical(self, "Error SQL", f"Error al ejecutar script: {err_msg}")
 
     def add_column(self, position):
         col_name, ok = QInputDialog.getText(self, "Nueva Columna", "Nombre de la columna:")
@@ -247,7 +277,7 @@ class DataTableTab(QWidget):
         query = QSqlQuery(db)
 
         current_cols_count = self.model.record().count()
-        if query.exec(f"ALTER TABLE {self.table_name} ADD COLUMN {col_name} TEXT"):
+        if query.exec(f"ALTER TABLE \"{self.table_name}\" ADD COLUMN \"{col_name}\" TEXT"):
             self.log(f"Columna '{col_name}' añadida.")
             self.model.select()
             if position < current_cols_count:
@@ -265,18 +295,15 @@ class DataTableTab(QWidget):
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
 
-        # Ensure we are not in the middle of a transaction
         self.model.submitAll()
 
         sql = f'ALTER TABLE "{self.table_name}" RENAME COLUMN "{old_name}" TO "{new_name}"'
         if query.exec(sql):
             self.log(f"Columna '{old_name}' renombrada a '{new_name}'.")
-            # We MUST reset the model to pick up the schema change properly
             self.model.setTable(self.table_name)
             self.model.select()
         else:
             self.log(f"Error renombrando columna: {query.lastError().text()}", is_error=True)
-            QMessageBox.critical(self, "Error", f"No se pudo renombrar la columna: {query.lastError().text()}")
 
     def delete_column(self, index):
         col_name = self.model.record().fieldName(index)
@@ -285,13 +312,12 @@ class DataTableTab(QWidget):
 
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
-        if query.exec(f"ALTER TABLE {self.table_name} DROP COLUMN {col_name}"):
+        if query.exec(f'ALTER TABLE "{self.table_name}" DROP COLUMN "{col_name}"'):
             self.log(f"Columna '{col_name}' eliminada.")
             self.model.setTable(self.table_name)
             self.model.select()
         else:
             self.log(f"Error eliminando columna: {query.lastError().text()}", is_error=True)
-            QMessageBox.critical(self, "Error", f"No se pudo eliminar la columna: {query.lastError().text()}")
 
 
     def update_database(self, db_conn_name):
@@ -325,7 +351,6 @@ class PrecureManagerApp(QMainWindow):
         # Tabs initialization
         self.registry_tab = DataTableTab("year_db", "T_Registry")
         self.resources_tab = DataTableTab("year_db", "T_Resources")
-        self.seasons_tab = DataTableTab("global_db", "T_Seasons")
 
         self.global_tab_container = QWidget()
         global_layout = QVBoxLayout(self.global_tab_container)
@@ -334,16 +359,17 @@ class PrecureManagerApp(QMainWindow):
         self.catalog_tab = DataTableTab("global_db", "T_Type_Catalog_Reg")
         self.opener_tab = DataTableTab("global_db", "T_Opener_Models")
         self.type_res_tab = DataTableTab("global_db", "T_Type_Resources")
+        self.seasons_tab = DataTableTab("global_db", "T_Seasons")
 
         self.global_subtabs.addTab(self.catalog_tab, "Catálogo")
         self.global_subtabs.addTab(self.opener_tab, "Modelos Opener")
         self.global_subtabs.addTab(self.type_res_tab, "Tipos Recursos")
+        self.global_subtabs.addTab(self.seasons_tab, "Temporadas")
         global_layout.addWidget(self.global_subtabs)
 
         self.tabs.addTab(self.registry_tab, "Registros")
         self.tabs.addTab(self.resources_tab, "Recursos")
         self.tabs.addTab(self.global_tab_container, "Global")
-        self.tabs.addTab(self.seasons_tab, "Temporadas")
 
         self.init_menu_bar()
 
@@ -378,13 +404,12 @@ class PrecureManagerApp(QMainWindow):
 
     def toggle_sql_consoles(self):
         is_visible = self.sender().isChecked()
-        # Find all DataTableTab instances and toggle consoles
         self.registry_tab.set_console_visible(is_visible)
         self.resources_tab.set_console_visible(is_visible)
-        self.seasons_tab.set_console_visible(is_visible)
         self.catalog_tab.set_console_visible(is_visible)
         self.opener_tab.set_console_visible(is_visible)
         self.type_res_tab.set_console_visible(is_visible)
+        self.seasons_tab.set_console_visible(is_visible)
 
     def init_db_connections(self):
         if not QSqlDatabase.contains("global_db"):
