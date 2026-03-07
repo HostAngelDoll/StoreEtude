@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QStringListModel
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QCursor, QTextCharFormat, QColor, QTextCursor
 from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord, QSqlQuery
 
-from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path
+from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path, BASE_DIR_PATH
 
 class DatabaseForm(QDialog):
     def __init__(self, model, row=-1, parent=None):
@@ -182,7 +182,6 @@ class DataTableTab(QWidget):
         log_layout.addWidget(QLabel("SQL Log:"))
         self.log_viewer = QPlainTextEdit()
         self.log_viewer.setReadOnly(True)
-        # Dark theme for log viewer
         self.log_viewer.setStyleSheet("background-color: black; color: white; font-family: Consolas, monospace;")
         log_layout.addWidget(self.log_viewer)
 
@@ -239,35 +238,50 @@ class DataTableTab(QWidget):
             QMessageBox.warning(self, "Selección", "Por favor selecciona una fila.")
 
     def run_sql_script(self):
-        script = self.sql_console.toPlainText().strip()
-        if not script:
+        full_script = self.sql_console.toPlainText().strip()
+        if not full_script:
             return
 
         db = QSqlDatabase.database(self.db_conn_name)
-        query = QSqlQuery(db)
-        if query.exec(script):
-            self.log(f"Ejecutado con éxito.")
+        # Split by semicolon but ignore inside quotes
+        statements = re.split(r';(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)', full_script)
 
-            # Detect CREATE TABLE or DROP TABLE
-            create_match = re.search(r"CREATE\s+TABLE\s+(\w+)", script, re.IGNORECASE)
-            drop_match = re.search(r"DROP\s+TABLE\s+(\w+)", script, re.IGNORECASE)
+        success_count = 0
+        error_occurred = False
 
-            if create_match:
-                new_table = create_match.group(1)
-                self.table_name = new_table
-                self.model.setTable(new_table)
-                self.log(f"Vista vinculada a nueva tabla: {new_table}")
-            elif drop_match:
-                dropped_table = drop_match.group(1)
-                if dropped_table.lower() == self.table_name.lower():
-                    self.model.clear()
-                    self.log(f"Tabla activa '{dropped_table}' eliminada. Vista limpiada.")
+        for statement in statements:
+            stmt = statement.strip()
+            if not stmt or stmt.upper() == "COMMIT":
+                continue
 
+            query = QSqlQuery(db)
+            if query.exec(stmt):
+                success_count += 1
+                # Detect CREATE TABLE or DROP TABLE
+                create_match = re.search(r"CREATE\s+TABLE\s+(\w+)", stmt, re.IGNORECASE)
+                drop_match = re.search(r"DROP\s+TABLE\s+(\w+)", stmt, re.IGNORECASE)
+
+                if create_match:
+                    new_table = create_match.group(1)
+                    self.table_name = new_table
+                    self.model.setTable(new_table)
+                    self.log(f"Vista vinculada a nueva tabla: {new_table}")
+                elif drop_match:
+                    dropped_table = drop_match.group(1)
+                    if dropped_table.lower() == self.table_name.lower():
+                        self.model.clear()
+                        self.log(f"Tabla activa '{dropped_table}' eliminada.")
+            else:
+                err_msg = query.lastError().text()
+                self.log(f"Error en sentencia: {stmt[:30]}... -> {err_msg}", is_error=True)
+                error_occurred = True
+                break
+
+        if success_count > 0:
+            self.log(f"Ejecutadas con éxito {success_count} sentencias.")
             self.model.select()
-            self.sql_console.clear()
-        else:
-            err_msg = query.lastError().text()
-            self.log(f"Error: {err_msg}", is_error=True)
+            if not error_occurred:
+                self.sql_console.clear()
 
     def add_column(self, position):
         col_name, ok = QInputDialog.getText(self, "Nueva Columna", "Nombre de la columna:")
@@ -283,7 +297,7 @@ class DataTableTab(QWidget):
             self.model.select()
             if position < current_cols_count:
                 QMessageBox.information(self, "Columna Añadida",
-                    "Nota: SQLite solo permite añadir columnas al final. La columna se ha añadido al final de la tabla.")
+                    "Nota: SQLite solo permite añadir columnas al final.")
         else:
             self.log(f"Error añadiendo columna: {query.lastError().text()}", is_error=True)
 
@@ -295,7 +309,6 @@ class DataTableTab(QWidget):
 
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
-
         self.model.submitAll()
 
         sql = f'ALTER TABLE "{self.table_name}" RENAME COLUMN "{old_name}" TO "{new_name}"'
@@ -319,7 +332,6 @@ class DataTableTab(QWidget):
             self.model.select()
         else:
             self.log(f"Error eliminando columna: {query.lastError().text()}", is_error=True)
-
 
     def update_database(self, db_conn_name):
         self.db_conn_name = db_conn_name
@@ -383,6 +395,16 @@ class PrecureManagerApp(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
+        # Edición
+        edit_menu = menubar.addMenu("Edición")
+        add_row_action = QAction("Añadir fila", self)
+        add_row_action.triggered.connect(self.on_add_row_requested)
+        edit_menu.addAction(add_row_action)
+
+        scan_masters_action = QAction("Escanear carpetas maestras", self)
+        scan_masters_action.triggered.connect(self.scan_master_folders)
+        edit_menu.addAction(scan_masters_action)
+
         # Vista
         view_menu = menubar.addMenu("Vista")
         panels_submenu = view_menu.addMenu("Mostrar Paneles")
@@ -400,8 +422,55 @@ class PrecureManagerApp(QMainWindow):
         # Ayuda
         help_menu = menubar.addMenu("Ayuda")
         about_action = QAction("Acerca de", self)
-        about_action.triggered.connect(lambda: QMessageBox.information(self, "Ayuda", "Precure Media Manager v1.0\nSistema de gestión de recursos."))
+        about_action.triggered.connect(lambda: QMessageBox.information(self, "Ayuda", "Precure Media Manager v1.0"))
         help_menu.addAction(about_action)
+
+    def on_add_row_requested(self):
+        # Get active tab (handle nested tabs too)
+        current_widget = self.tabs.currentWidget()
+        if current_widget == self.global_tab_container:
+            current_tab = self.global_subtabs.currentWidget()
+        else:
+            current_tab = current_widget
+
+        if isinstance(current_tab, DataTableTab):
+            current_tab.add_record()
+
+    def scan_master_folders(self):
+        if not os.path.exists(BASE_DIR_PATH):
+            QMessageBox.critical(self, "Error", f"Ruta base {BASE_DIR_PATH} no encontrada.")
+            return
+
+        db = QSqlDatabase.database("global_db")
+        query = QSqlQuery(db)
+        updated_count = 0
+
+        for year in range(2004, 2027):
+            year_path = os.path.join(BASE_DIR_PATH, str(year))
+            if os.path.exists(year_path):
+                found_folder = None
+                try:
+                    for item in os.listdir(year_path):
+                        if "___" in item and os.path.isdir(os.path.join(year_path, item)):
+                            found_folder = item
+                            break
+                except Exception as e:
+                    print(f"Error escaneando {year_path}: {e}")
+                    continue
+
+                if found_folder:
+                    # Update T_Seasons where year = year
+                    q = QSqlQuery(db)
+                    q.prepare("UPDATE T_Seasons SET path_master = ? WHERE year = ?")
+                    q.addBindValue(found_folder)
+                    q.addBindValue(year)
+                    if q.exec():
+                        updated_count += 1
+                    else:
+                        print(f"Error actualizando año {year}: {q.lastError().text()}")
+
+        self.seasons_tab.model.select()
+        QMessageBox.information(self, "Escaneo", f"Se actualizaron {updated_count} filas en Temporadas.")
 
     def toggle_sql_consoles(self):
         is_visible = self.sender().isChecked()
