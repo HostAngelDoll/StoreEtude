@@ -1,13 +1,14 @@
 import sys
 import os
+import re
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QTabWidget, QLabel, QPushButton, QHBoxLayout,
                              QTreeView, QHeaderView, QDockWidget, QTableView,
                              QAbstractItemView, QDialog, QFormLayout, QLineEdit,
                              QSpinBox, QCheckBox, QDialogButtonBox, QMessageBox,
-                             QComboBox, QPlainTextEdit, QMenuBar)
+                             QComboBox, QPlainTextEdit, QMenuBar, QMenu, QInputDialog)
 from PyQt6.QtCore import Qt, QStringListModel
-from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QCursor
 from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord, QSqlQuery
 
 from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path
@@ -84,6 +85,38 @@ class DatabaseForm(QDialog):
 
         self.model.select()
 
+class ColumnHeaderView(QHeaderView):
+    def __init__(self, orientation, parent=None):
+        super().__init__(orientation, parent)
+        self.setSectionsClickable(True)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
+
+    def show_context_menu(self, pos):
+        logical_index = self.logicalIndexAt(pos)
+        if logical_index < 0:
+            return
+
+        menu = QMenu(self)
+        add_left = menu.addAction("Agregar columna (izquierda)")
+        add_right = menu.addAction("Agregar columna (derecha)")
+        rename_col = menu.addAction("Renombrar columna")
+        delete_col = menu.addAction("Eliminar columna")
+
+        action = menu.exec(self.mapToGlobal(pos))
+        if not action:
+            return
+
+        table_tab = self.parent().parent() # QTableView -> DataTableTab
+        if action == add_left:
+            table_tab.add_column(logical_index)
+        elif action == add_right:
+            table_tab.add_column(logical_index + 1)
+        elif action == rename_col:
+            table_tab.rename_column(logical_index)
+        elif action == delete_col:
+            table_tab.delete_column(logical_index)
+
 class DataTableTab(QWidget):
     def __init__(self, db_conn_name, table_name, parent=None):
         super().__init__(parent)
@@ -100,7 +133,11 @@ class DataTableTab(QWidget):
         self.view.setModel(self.model)
         self.view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+        # Custom Header
+        header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
+        self.view.setHorizontalHeader(header)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
         # CRUD Buttons
         self.btn_layout = QHBoxLayout()
@@ -160,10 +197,73 @@ class DataTableTab(QWidget):
         query = QSqlQuery(db)
         if query.exec(script):
             QMessageBox.information(self, "SQL", "Script ejecutado con éxito.")
+
+            # Detect CREATE TABLE or DROP TABLE
+            create_match = re.search(r"CREATE\s+TABLE\s+(\w+)", script, re.IGNORECASE)
+            drop_match = re.search(r"DROP\s+TABLE\s+(\w+)", script, re.IGNORECASE)
+
+            if create_match:
+                new_table = create_match.group(1)
+                self.table_name = new_table
+                self.model.setTable(new_table)
+                print(f"Table linked to new table: {new_table}")
+            elif drop_match:
+                dropped_table = drop_match.group(1)
+                if dropped_table.lower() == self.table_name.lower():
+                    self.model.clear()
+
             self.model.select()
             self.sql_console.clear()
         else:
             QMessageBox.critical(self, "Error SQL", f"Error al ejecutar script: {query.lastError().text()}")
+
+    def add_column(self, position):
+        col_name, ok = QInputDialog.getText(self, "Nueva Columna", "Nombre de la columna:")
+        if not ok or not col_name:
+            return
+
+        db = QSqlDatabase.database(self.db_conn_name)
+        query = QSqlQuery(db)
+
+        # SQLite natively only supports appending columns at the end.
+        # To avoid schema destruction (loss of PKs, constraints), we will only allow appending for now.
+        # If position is not at the end, we inform the user.
+        current_cols_count = self.model.record().count()
+
+        if query.exec(f"ALTER TABLE {self.table_name} ADD COLUMN {col_name} TEXT"):
+            self.model.select()
+            if position < current_cols_count:
+                QMessageBox.information(self, "Columna Añadida",
+                    "Nota: SQLite solo permite añadir columnas al final. La columna se ha añadido al final de la tabla.")
+        else:
+            QMessageBox.critical(self, "Error", f"No se pudo añadir la columna: {query.lastError().text()}")
+
+    def rename_column(self, index):
+        old_name = self.model.record().fieldName(index)
+        new_name, ok = QInputDialog.getText(self, "Renombrar Columna", f"Nuevo nombre para '{old_name}':", text=old_name)
+        if not ok or not new_name or new_name == old_name:
+            return
+
+        db = QSqlDatabase.database(self.db_conn_name)
+        query = QSqlQuery(db)
+        if query.exec(f"ALTER TABLE {self.table_name} RENAME COLUMN {old_name} TO {new_name}"):
+            self.model.select()
+        else:
+            QMessageBox.critical(self, "Error", f"No se pudo renombrar la columna: {query.lastError().text()}")
+
+    def delete_column(self, index):
+        col_name = self.model.record().fieldName(index)
+        if QMessageBox.question(self, "Confirmar", f"¿Seguro que quieres eliminar la columna '{col_name}'?") != QMessageBox.StandardButton.Yes:
+            return
+
+        db = QSqlDatabase.database(self.db_conn_name)
+        query = QSqlQuery(db)
+        if query.exec(f"ALTER TABLE {self.table_name} DROP COLUMN {col_name}"):
+            self.model.select()
+        else:
+            # Fallback for older SQLite if DROP COLUMN fails (though we have 3.45+)
+            QMessageBox.critical(self, "Error", f"No se pudo eliminar la columna: {query.lastError().text()}")
+
 
     def update_database(self, db_conn_name):
         self.db_conn_name = db_conn_name
@@ -186,19 +286,15 @@ class PrecureManagerApp(QMainWindow):
         self.setCentralWidget(central_widget)
         self.main_layout = QHBoxLayout(central_widget)
         
-        # Sidebar (Left) - Initialized before tabs to be on the left in the layout
         self.init_sidebar()
 
-        # Tabs
         self.tabs = QTabWidget()
         self.main_layout.addWidget(self.tabs, 4)
         
-        # Reordered Tabs: 1. Registry, 2. Resources, 3. Global, 4. Seasons
         self.registry_tab = DataTableTab("year_db", "T_Registry")
         self.resources_tab = DataTableTab("year_db", "T_Resources")
         self.seasons_tab = DataTableTab("global_db", "T_Seasons")
 
-        # Global Sub-tabs
         self.global_tab_container = QWidget()
         global_layout = QVBoxLayout(self.global_tab_container)
         self.global_subtabs = QTabWidget()
@@ -219,14 +315,11 @@ class PrecureManagerApp(QMainWindow):
 
     def init_menu_bar(self):
         menubar = self.menuBar()
-
-        # Archivo
         file_menu = menubar.addMenu("Archivo")
         exit_action = QAction("Salir", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-        # Ayuda
         help_menu = menubar.addMenu("Ayuda")
         about_action = QAction("Acerca de", self)
         about_action.triggered.connect(lambda: QMessageBox.information(self, "Ayuda", "Precure Media Manager v1.0\nSistema de gestión de recursos."))
@@ -244,7 +337,6 @@ class PrecureManagerApp(QMainWindow):
             db.open()
 
     def init_sidebar(self):
-        # We can use a DockWidget but to ensure it is on the left by default in this task:
         self.dock = QDockWidget("Años", self)
         self.dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
 
