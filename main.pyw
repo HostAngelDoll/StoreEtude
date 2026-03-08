@@ -8,9 +8,9 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QSpinBox, QCheckBox, QDialogButtonBox, QMessageBox,
                              QComboBox, QPlainTextEdit, QMenuBar, QMenu, QInputDialog,
                              QSplitter, QProgressDialog)
-from PyQt6.QtCore import Qt, QStringListModel
+from PyQt6.QtCore import Qt, QStringListModel, QSettings
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QCursor, QTextCharFormat, QColor, QTextCursor
-from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord, QSqlQuery
+from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord, QSqlQuery, QSqlRelationalTableModel, QSqlRelation, QSqlRelationalDelegate
 import openpyxl
 
 from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path, BASE_DIR_PATH
@@ -127,15 +127,25 @@ class DataTableTab(QWidget):
         self.table_name = table_name
         self.layout = QVBoxLayout(self)
 
-        self.model = QSqlTableModel(self, QSqlDatabase.database(db_conn_name))
-        self.model.setTable(table_name)
+        db = QSqlDatabase.database(db_conn_name)
+        if table_name == "T_Resources" and db_conn_name == "year_db":
+            self.model = QSqlRelationalTableModel(self, db)
+            self.model.setTable(table_name)
+            self.model.setRelation(1, QSqlRelation("T_Type_Resources", "idx", "type_resource"))
+        else:
+            self.model = QSqlTableModel(self, db)
+            self.model.setTable(table_name)
+
         self.model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
         self.model.select()
 
         self.view = QTableView()
         self.view.setModel(self.model)
+        if isinstance(self.model, QSqlRelationalTableModel):
+            self.view.setItemDelegate(QSqlRelationalDelegate(self.view))
         self.view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
 
         # Custom Header
         header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
@@ -339,11 +349,23 @@ class DataTableTab(QWidget):
 
     def update_database(self, db_conn_name):
         self.db_conn_name = db_conn_name
-        self.model = QSqlTableModel(self, QSqlDatabase.database(db_conn_name))
-        self.model.setTable(self.table_name)
+        db = QSqlDatabase.database(db_conn_name)
+
+        if self.table_name == "T_Resources" and db_conn_name == "year_db":
+            self.model = QSqlRelationalTableModel(self, db)
+            self.model.setTable(self.table_name)
+            self.model.setRelation(1, QSqlRelation("T_Type_Resources", "idx", "type_resource"))
+        else:
+            self.model = QSqlTableModel(self, db)
+            self.model.setTable(self.table_name)
+
         self.model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
         self.model.select()
         self.view.setModel(self.model)
+        if isinstance(self.model, QSqlRelationalTableModel):
+            self.view.setItemDelegate(QSqlRelationalDelegate(self.view))
+        else:
+            self.view.setItemDelegate(None)
 
     def set_console_visible(self, visible):
         self.console_area.setVisible(visible)
@@ -431,7 +453,13 @@ class PrecureManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Precure Media Manager - Core System")
-        self.setGeometry(100, 100, 1200, 800)
+        self.settings = QSettings("MyCompany", "PrecureMediaManager")
+
+        geometry = self.settings.value("geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        else:
+            self.setGeometry(100, 100, 1200, 800)
 
         self.init_db_connections()
 
@@ -468,6 +496,30 @@ class PrecureManagerApp(QMainWindow):
         self.tabs.addTab(self.global_tab_container, "Global")
 
         self.init_menu_bar()
+        self.load_settings()
+
+    def closeEvent(self, event):
+        self.save_settings()
+        super().closeEvent(event)
+
+    def save_settings(self):
+        self.settings.setValue("geometry", self.saveGeometry())
+        self.settings.setValue("sidebar_visible", self.toggle_sidebar.isChecked())
+        self.settings.setValue("console_visible", self.toggle_console.isChecked())
+        self.settings.setValue("auto_resize", self.auto_resize_action.isChecked())
+
+    def load_settings(self):
+        sidebar_visible = self.settings.value("sidebar_visible", True, type=bool)
+        self.toggle_sidebar.setChecked(sidebar_visible)
+        self.dock.setVisible(sidebar_visible)
+
+        console_visible = self.settings.value("console_visible", True, type=bool)
+        self.toggle_console.setChecked(console_visible)
+        self.toggle_sql_consoles()
+
+        auto_resize = self.settings.value("auto_resize", True, type=bool)
+        self.auto_resize_action.setChecked(auto_resize)
+        self.set_auto_resize_columns(auto_resize)
 
     def set_auto_resize_columns(self, enabled):
         for tab in [self.registry_tab, self.resources_tab, self.catalog_tab,
@@ -479,6 +531,12 @@ class PrecureManagerApp(QMainWindow):
 
         # Archivo
         file_menu = menubar.addMenu("Archivo")
+
+        save_action = QAction("Guardar", self)
+        save_action.setShortcut("Ctrl+S")
+        save_action.triggered.connect(self.save_current_tab)
+        file_menu.addAction(save_action)
+
         exit_action = QAction("Salir", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
@@ -501,26 +559,39 @@ class PrecureManagerApp(QMainWindow):
         view_menu = menubar.addMenu("Vista")
         panels_submenu = view_menu.addMenu("Mostrar Paneles")
 
-        toggle_sidebar = QAction("Años", self, checkable=True)
-        toggle_sidebar.setChecked(True)
-        toggle_sidebar.triggered.connect(lambda: self.dock.setVisible(toggle_sidebar.isChecked()))
-        panels_submenu.addAction(toggle_sidebar)
+        self.toggle_sidebar = QAction("Años", self, checkable=True)
+        self.toggle_sidebar.setChecked(True)
+        self.toggle_sidebar.triggered.connect(lambda: self.dock.setVisible(self.toggle_sidebar.isChecked()))
+        panels_submenu.addAction(self.toggle_sidebar)
 
-        toggle_console = QAction("Consola SQL", self, checkable=True)
-        toggle_console.setChecked(True)
-        toggle_console.triggered.connect(self.toggle_sql_consoles)
-        panels_submenu.addAction(toggle_console)
+        self.toggle_console = QAction("Consola SQL", self, checkable=True)
+        self.toggle_console.setChecked(True)
+        self.toggle_console.triggered.connect(self.toggle_sql_consoles)
+        panels_submenu.addAction(self.toggle_console)
 
-        auto_resize_action = QAction("Auto-ajustar ancho de columnas", self, checkable=True)
-        auto_resize_action.setChecked(True)
-        auto_resize_action.triggered.connect(self.set_auto_resize_columns)
-        view_menu.addAction(auto_resize_action)
+        self.auto_resize_action = QAction("Auto-ajustar ancho de columnas", self, checkable=True)
+        self.auto_resize_action.setChecked(True)
+        self.auto_resize_action.triggered.connect(self.set_auto_resize_columns)
+        view_menu.addAction(self.auto_resize_action)
 
         # Ayuda
         help_menu = menubar.addMenu("Ayuda")
         about_action = QAction("Acerca de", self)
         about_action.triggered.connect(lambda: QMessageBox.information(self, "Ayuda", "Precure Media Manager v1.0"))
         help_menu.addAction(about_action)
+
+    def save_current_tab(self):
+        current_widget = self.tabs.currentWidget()
+        if current_widget == self.global_tab_container:
+            current_tab = self.global_subtabs.currentWidget()
+        else:
+            current_tab = current_widget
+
+        if isinstance(current_tab, DataTableTab):
+            if current_tab.model.submitAll():
+                QMessageBox.information(self, "Guardar", "Cambios guardados correctamente.")
+            else:
+                QMessageBox.critical(self, "Error", f"No se pudo guardar: {current_tab.model.lastError().text()}")
 
     def on_add_row_requested(self):
         # Get active tab (handle nested tabs too)
@@ -712,7 +783,7 @@ class PrecureManagerApp(QMainWindow):
         QMessageBox.information(self, "Escaneo", f"Se actualizaron {updated_count} filas en Temporadas.")
 
     def toggle_sql_consoles(self):
-        is_visible = self.sender().isChecked()
+        is_visible = self.toggle_console.isChecked()
         self.registry_tab.set_console_visible(is_visible)
         self.resources_tab.set_console_visible(is_visible)
         self.catalog_tab.set_console_visible(is_visible)
@@ -729,7 +800,10 @@ class PrecureManagerApp(QMainWindow):
         if not QSqlDatabase.contains("year_db"):
             db = QSqlDatabase.addDatabase("QSQLITE", "year_db")
             db.setDatabaseName(get_yearly_db_path(2004))
-            db.open()
+            if db.open():
+                # Attach global db on initial load
+                query = QSqlQuery(db)
+                query.exec(f"ATTACH DATABASE '{GLOBAL_DB_PATH}' AS global_db")
 
     def init_sidebar(self):
         self.dock = QDockWidget("Años", self)
@@ -759,6 +833,10 @@ class PrecureManagerApp(QMainWindow):
         db.close()
         db.setDatabaseName(db_path)
         if db.open():
+            # Attach global db
+            query = QSqlQuery(db)
+            query.exec(f"ATTACH DATABASE '{GLOBAL_DB_PATH}' AS global_db")
+
             self.resources_tab.update_database("year_db")
             self.registry_tab.update_database("year_db")
         else:
