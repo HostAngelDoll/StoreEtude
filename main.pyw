@@ -12,6 +12,8 @@ from PyQt6.QtCore import Qt, QStringListModel
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QCursor, QTextCharFormat, QColor, QTextCursor
 from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord, QSqlQuery
 
+import openpyxl
+
 from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path, BASE_DIR_PATH
 
 class DatabaseForm(QDialog):
@@ -137,9 +139,9 @@ class DataTableTab(QWidget):
         self.view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
 
         # Custom Header
-        header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
-        self.view.setHorizontalHeader(header)
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
+        self.view.setHorizontalHeader(self.header)
+        self.header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
         # CRUD Buttons
         self.btn_layout = QHBoxLayout()
@@ -201,6 +203,14 @@ class DataTableTab(QWidget):
         self.layout.addWidget(self.main_splitter)
         self.layout.addLayout(self.btn_layout)
 
+    def set_auto_resize_columns(self, enabled):
+        if enabled:
+            self.header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        else:
+            self.header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            # Default width based on header text if interactive
+            self.view.resizeColumnsToContents()
+
     def log(self, message, is_error=False):
         self.log_viewer.moveCursor(QTextCursor.MoveOperation.End)
         fmt = QTextCharFormat()
@@ -243,7 +253,6 @@ class DataTableTab(QWidget):
             return
 
         db = QSqlDatabase.database(self.db_conn_name)
-        # Split by semicolon but ignore inside quotes
         statements = re.split(r';(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)', full_script)
 
         success_count = 0
@@ -257,7 +266,6 @@ class DataTableTab(QWidget):
             query = QSqlQuery(db)
             if query.exec(stmt):
                 success_count += 1
-                # Detect CREATE TABLE or DROP TABLE
                 create_match = re.search(r"CREATE\s+TABLE\s+(\w+)", stmt, re.IGNORECASE)
                 drop_match = re.search(r"DROP\s+TABLE\s+(\w+)", stmt, re.IGNORECASE)
 
@@ -405,6 +413,10 @@ class PrecureManagerApp(QMainWindow):
         scan_masters_action.triggered.connect(self.scan_master_folders)
         edit_menu.addAction(scan_masters_action)
 
+        migrate_excel_action = QAction("Migrar Recursos de años", self)
+        migrate_excel_action.triggered.connect(self.migrate_resources_from_excel)
+        edit_menu.addAction(migrate_excel_action)
+
         # Vista
         view_menu = menubar.addMenu("Vista")
         panels_submenu = view_menu.addMenu("Mostrar Paneles")
@@ -419,14 +431,24 @@ class PrecureManagerApp(QMainWindow):
         toggle_console.triggered.connect(self.toggle_sql_consoles)
         panels_submenu.addAction(toggle_console)
 
+        auto_resize_action = QAction("Auto-ajustar ancho de columnas", self, checkable=True)
+        auto_resize_action.setChecked(True)
+        auto_resize_action.triggered.connect(self.toggle_auto_resize_columns)
+        view_menu.addAction(auto_resize_action)
+
         # Ayuda
         help_menu = menubar.addMenu("Ayuda")
         about_action = QAction("Acerca de", self)
         about_action.triggered.connect(lambda: QMessageBox.information(self, "Ayuda", "Precure Media Manager v1.0"))
         help_menu.addAction(about_action)
 
+    def toggle_auto_resize_columns(self):
+        enabled = self.sender().isChecked()
+        for tab in [self.registry_tab, self.resources_tab, self.catalog_tab,
+                    self.opener_tab, self.type_res_tab, self.seasons_tab]:
+            tab.set_auto_resize_columns(enabled)
+
     def on_add_row_requested(self):
-        # Get active tab (handle nested tabs too)
         current_widget = self.tabs.currentWidget()
         if current_widget == self.global_tab_container:
             current_tab = self.global_subtabs.currentWidget()
@@ -442,7 +464,6 @@ class PrecureManagerApp(QMainWindow):
             return
 
         db = QSqlDatabase.database("global_db")
-        query = QSqlQuery(db)
         updated_count = 0
 
         for year in range(2004, 2027):
@@ -454,32 +475,113 @@ class PrecureManagerApp(QMainWindow):
                         if "___" in item and os.path.isdir(os.path.join(year_path, item)):
                             found_folder = item
                             break
-                except Exception as e:
-                    print(f"Error escaneando {year_path}: {e}")
+                except:
                     continue
 
                 if found_folder:
-                    # Update T_Seasons where year = year
                     q = QSqlQuery(db)
                     q.prepare("UPDATE T_Seasons SET path_master = ? WHERE year = ?")
                     q.addBindValue(found_folder)
                     q.addBindValue(year)
                     if q.exec():
                         updated_count += 1
-                    else:
-                        print(f"Error actualizando año {year}: {q.lastError().text()}")
 
         self.seasons_tab.model.select()
         QMessageBox.information(self, "Escaneo", f"Se actualizaron {updated_count} filas en Temporadas.")
 
+    def migrate_resources_from_excel(self):
+        if not os.path.exists(BASE_DIR_PATH):
+            QMessageBox.critical(self, "Error", f"Ruta base {BASE_DIR_PATH} no encontrada.")
+            return
+
+        total_migrated = 0
+
+        for year in range(2004, 2027):
+            px = year - 2003
+            px_str = f"{px:02d}"
+            excel_path = os.path.join(BASE_DIR_PATH, str(year), f"{px_str}. identity_propeties", f"{px_str}. le_etude.overwrite.xlsx")
+
+            if not os.path.exists(excel_path):
+                continue
+
+            db_path = get_yearly_db_path(year)
+            conn_name = f"migration_{year}"
+            db = QSqlDatabase.addDatabase("QSQLITE", conn_name)
+            db.setDatabaseName(db_path)
+
+            if not db.open():
+                print(f"No se pudo abrir DB para migración {year}")
+                continue
+
+            try:
+                wb = openpyxl.load_workbook(excel_path, data_only=True)
+                if "material_list" not in wb.sheetnames:
+                    continue
+
+                sheet = wb["material_list"]
+                # Columns mapping (starting from index 1, so E is 5, N is 14, O is 15)
+                # Excel:
+                # E (5): Type Material [FK]
+                # F (6): Season Name [FK]
+                # G (7): Ep Num
+                # H (8): Ep Sp Num
+                # I (9): ID Code Material [A] (Empty for now)
+                # J (10): Title Material
+                # K (11): Released (UTC+09)
+                # L (12): Released Soundtrack
+                # M (13): Released Spinoff
+                # N (14): Duration File
+                # O (15): DateTime Download
+
+                rows_migrated = 0
+                for row_idx in range(4, sheet.max_row + 1):
+                    # Basic empty row check: if Title (J) and Type (E) are empty
+                    if not sheet.cell(row=row_idx, column=10).value and not sheet.cell(row=row_idx, column=5).value:
+                        continue
+
+                    query = QSqlQuery(db)
+                    query.prepare("""
+                        INSERT INTO T_Resources (
+                            type_material, precure_season_name, ep_num, ep_sp_num,
+                            id_code_material, title_material, released_utc_09,
+                            released_soundtrack_utc_09, released_spinoff_utc_09,
+                            duration_file, datetime_download
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """)
+
+                    query.addBindValue(sheet.cell(row=row_idx, column=5).value) # Type
+                    query.addBindValue(sheet.cell(row=row_idx, column=6).value) # Season
+                    query.addBindValue(sheet.cell(row=row_idx, column=7).value) # Ep Num
+                    query.addBindValue(sheet.cell(row=row_idx, column=8).value) # Ep Sp Num
+                    query.addBindValue(None) # ID Code Material (Empty [A])
+                    query.addBindValue(sheet.cell(row=row_idx, column=10).value) # Title
+                    query.addBindValue(str(sheet.cell(row=row_idx, column=11).value or "")) # Released
+                    query.addBindValue(str(sheet.cell(row=row_idx, column=12).value or ""))
+                    query.addBindValue(str(sheet.cell(row=row_idx, column=13).value or ""))
+                    query.addBindValue(str(sheet.cell(row=row_idx, column=14).value or "")) # Duration
+                    query.addBindValue(str(sheet.cell(row=row_idx, column=15).value or "")) # Download
+
+                    if query.exec():
+                        rows_migrated += 1
+
+                total_migrated += rows_migrated
+                print(f"Migrados {rows_migrated} recursos para el año {year}")
+
+            except Exception as e:
+                print(f"Error migrando año {year}: {e}")
+            finally:
+                db.close()
+                QSqlDatabase.removeDatabase(conn_name)
+
+        # Refresh currently visible models
+        self.resources_tab.model.select()
+        QMessageBox.information(self, "Migración", f"Migración completada. Total recursos migrados: {total_migrated}")
+
     def toggle_sql_consoles(self):
         is_visible = self.sender().isChecked()
-        self.registry_tab.set_console_visible(is_visible)
-        self.resources_tab.set_console_visible(is_visible)
-        self.catalog_tab.set_console_visible(is_visible)
-        self.opener_tab.set_console_visible(is_visible)
-        self.type_res_tab.set_console_visible(is_visible)
-        self.seasons_tab.set_console_visible(is_visible)
+        for tab in [self.registry_tab, self.resources_tab, self.catalog_tab,
+                    self.opener_tab, self.type_res_tab, self.seasons_tab]:
+            tab.set_console_visible(is_visible)
 
     def init_db_connections(self):
         if not QSqlDatabase.contains("global_db"):
