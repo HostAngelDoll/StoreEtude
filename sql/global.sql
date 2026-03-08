@@ -1,11 +1,11 @@
-CREATE TABLE T_Type_Catalog_Reg (
+CREATE TABLE IF NOT EXISTS T_Type_Catalog_Reg (
     idx INTEGER PRIMARY KEY AUTOINCREMENT,
     type TEXT,
     category TEXT,
     description TEXT
 );
 
-CREATE TABLE T_Opener_Models (
+CREATE TABLE IF NOT EXISTS T_Opener_Models (
     id_model INTEGER PRIMARY KEY AUTOINCREMENT,
     model_name TEXT,
     start_validity_overwrite TEXT,
@@ -18,12 +18,12 @@ CREATE TABLE T_Opener_Models (
     description TEXT
 );
 
-CREATE TABLE T_Type_Resources (
+CREATE TABLE IF NOT EXISTS T_Type_Resources (
     idx INTEGER PRIMARY KEY AUTOINCREMENT,
     type_resource TEXT
 );
 
-CREATE TABLE T_Seasons (
+CREATE TABLE IF NOT EXISTS T_Seasons (
     year INTEGER,
     prefix_by_year TEXT,
     is_spinoff INTEGER,

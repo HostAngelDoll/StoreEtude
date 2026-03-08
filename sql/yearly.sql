@@ -1,4 +1,4 @@
-CREATE TABLE T_Resources (
+CREATE TABLE IF NOT EXISTS T_Resources (
     title_material TEXT PRIMARY KEY,
     type_material INTEGER,
     precure_season_name TEXT,
@@ -14,7 +14,7 @@ CREATE TABLE T_Resources (
     relative_path_of_lyrics TEXT
 );
 
-CREATE TABLE T_Registry (
+CREATE TABLE IF NOT EXISTS T_Registry (
     idx INTEGER PRIMARY KEY AUTOINCREMENT,
     title_material TEXT,
     datetime_range_utc_06 TEXT,
