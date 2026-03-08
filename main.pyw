@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QAbstractItemView, QDialog, QFormLayout, QLineEdit,
                              QSpinBox, QCheckBox, QDialogButtonBox, QMessageBox,
                              QComboBox, QPlainTextEdit, QMenuBar, QMenu, QInputDialog,
-                             QSplitter)
+                             QSplitter, QProgressDialog)
 from PyQt6.QtCore import Qt, QStringListModel
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QCursor, QTextCharFormat, QColor, QTextCursor
 from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord, QSqlQuery
@@ -538,6 +538,12 @@ class PrecureManagerApp(QMainWindow):
             QMessageBox.critical(self, "Error", f"Ruta base {BASE_DIR_PATH} no encontrada.")
             return
 
+        # Prepare progress dialog
+        years = list(range(2004, 2027))
+        progress = QProgressDialog("Migrando recursos...", "Cancelar", 0, len(years), self)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.show()
+
         total_migrated = 0
 
         # Load Global FK mappings
@@ -554,7 +560,14 @@ class PrecureManagerApp(QMainWindow):
         while q.next():
             seasons_map[q.value(0)] = q.value(0)
 
-        for year in range(2004, 2027):
+        for i, year in enumerate(years):
+            progress.setValue(i)
+            progress.setLabelText(f"Procesando año {year}...")
+            QApplication.processEvents()
+
+            if progress.wasCanceled():
+                break
+
             px = year - 2003
             px_str = f"{px:02d}"
             excel_path = os.path.join(BASE_DIR_PATH, str(year), f"{px_str}. identity_propeties", f"{px_str}. le_etude.overwrite.xlsx")
@@ -657,8 +670,10 @@ class PrecureManagerApp(QMainWindow):
             except Exception as e:
                 print(f"Error processing {excel_path}: {e}")
 
+        progress.setValue(len(years))
         self.resources_tab.model.select()
-        QMessageBox.information(self, "Migración", f"Se migraron {total_migrated} recursos en total.")
+        if not progress.wasCanceled():
+            QMessageBox.information(self, "Migración", f"Se migraron {total_migrated} recursos en total.")
 
     def scan_master_folders(self):
         if not os.path.exists(BASE_DIR_PATH):
