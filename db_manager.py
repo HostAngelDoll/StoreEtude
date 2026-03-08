@@ -3,6 +3,7 @@ import sqlite3
 
 GLOBAL_DB_PATH = "_global.db"
 BASE_DIR_PATH = r"E:\_Internal"  # Configurable
+SQL_DIR = "sql"
 
 def get_db_connection(db_path):
     conn = sqlite3.connect(db_path)
@@ -15,64 +16,25 @@ def get_yearly_db_path(year):
     year_dir = os.path.join(BASE_DIR_PATH, str(year), f"{px_str}. identity_propeties")
     return os.path.join(year_dir, "le_etude_base.db")
 
-def init_global_db():
+def run_sql_file(conn, filename):
+    filepath = os.path.join(SQL_DIR, filename)
+    if not os.path.exists(filepath):
+        print(f"SQL file not found: {filepath}")
+        return
+    with open(filepath, 'r', encoding='utf-8') as f:
+        sql = f.read()
+    conn.executescript(sql)
+
+def init_global_db(reset=False):
+    if reset and os.path.exists(GLOBAL_DB_PATH):
+        os.remove(GLOBAL_DB_PATH)
+
     conn = get_db_connection(GLOBAL_DB_PATH)
-    cursor = conn.cursor()
-    
-    # T_Type_Catalog_Reg
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS T_Type_Catalog_Reg (
-        idx INTEGER PRIMARY KEY AUTOINCREMENT,
-        type TEXT,
-        category TEXT,
-        description TEXT
-    )
-    """)
-    
-    # T_Opener_Models
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS T_Opener_Models (
-        id_model INTEGER PRIMARY KEY AUTOINCREMENT,
-        model_name TEXT PRIMARY KEY,
-        start_validity_overwrite TEXT,
-        end_validity_overwrite TEXT,
-        start_validity_locally TEXT,
-        end_validity_locally TEXT,
-        model_name_overwrite TEXT,
-        model_name_locally TEXT,
-        components TEXT,
-        description TEXT
-    )
-    """)
-    
-    # T_Type_Resources
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS T_Type_Resources (
-        idx INTEGER PRIMARY KEY AUTOINCREMENT,
-        type_resource TEXT
-    )
-    """)
-    
-    # T_Seasons
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS T_Seasons (
-        year INTEGER,
-        prefix_by_year TEXT,
-        is_spinoff INTEGER, -- Boolean 0/1
-        precure_season_name TEXT PRIMARY KEY,
-        japanese_name TEXT,
-        romaji_name TEXT,
-        episode_total INTEGER,
-        theme_description TEXT,
-        release_date TEXT,
-        path_master TEXT
-    );
-    """)
-    
+    run_sql_file(conn, "global.sql")
     conn.commit()
     conn.close()
 
-def init_yearly_dbs():
+def init_yearly_dbs(reset=False):
     # Only if E:\ exists or the BASE_DIR_PATH exists
     drive = os.path.splitdrive(BASE_DIR_PATH)[0]
     if drive and not os.path.exists(drive + "\\"):
@@ -89,6 +51,9 @@ def init_yearly_dbs():
         db_path = get_yearly_db_path(year)
         year_dir = os.path.dirname(db_path)
         
+        if reset and os.path.exists(db_path):
+            os.remove(db_path)
+
         if not os.path.exists(year_dir):
             try:
                 os.makedirs(year_dir)
@@ -97,50 +62,13 @@ def init_yearly_dbs():
                 continue
         
         conn = get_db_connection(db_path)
-        cursor = conn.cursor()
-        
-        # T_Resources
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS T_Resources (
-            idx INTEGER PRIMARY KEY AUTOINCREMENT,
-            type_material INTEGER,
-            precure_season_name TEXT,
-            ep_num INTEGER,
-            ep_sp_num INTEGER,
-            id_code_material TEXT UNIQUE,
-            title_material TEXT,
-            released_utc_09 TEXT,
-            released_soundtrack_utc_09 TEXT,
-            released_spinoff_utc_09 TEXT,
-            duration_file TEXT,
-            datetime_download TEXT,
-            relative_path_of_file TEXT,
-            relative_path_of_lyrics TEXT
-        )
-        """)
-        
-        # T_Registry
-        cursor.execute("""
-        CREATE TABLE IF NOT EXISTS T_Registry (
-            idx INTEGER PRIMARY KEY AUTOINCREMENT,
-            id_code_material TEXT,
-            datetime_range_utc_06 TEXT,
-            type_repeat TEXT,
-            type_listen TEXT,
-            model_writer TEXT,
-            lapsed_calculated TEXT,
-            opener_model TEXT,
-            name_of_opener_model TEXT,
-            FOREIGN KEY (id_code_material) REFERENCES T_Resources(id_code_material)
-        )
-        """)
-        
+        run_sql_file(conn, "yearly.sql")
         conn.commit()
         conn.close()
 
-def init_databases():
-    init_global_db()
-    init_yearly_dbs()
+def init_databases(reset=False):
+    init_global_db(reset)
+    init_yearly_dbs(reset)
 
 if __name__ == "__main__":
-    init_databases()
+    init_databases(reset=True)

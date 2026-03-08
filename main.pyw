@@ -1,8 +1,8 @@
 import sys
 import os
 import re
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QTabWidget, QLabel, QPushButton, QHBoxLayout, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QTabWidget, QLabel, QPushButton, QHBoxLayout,
                              QTreeView, QHeaderView, QDockWidget, QTableView,
                              QAbstractItemView, QDialog, QFormLayout, QLineEdit,
                              QSpinBox, QCheckBox, QDialogButtonBox, QMessageBox,
@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import Qt, QStringListModel
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QCursor, QTextCharFormat, QColor, QTextCursor
 from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord, QSqlQuery
+import openpyxl
 
 from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path, BASE_DIR_PATH
 
@@ -22,17 +23,17 @@ class DatabaseForm(QDialog):
         self.record = model.record(row) if row >= 0 else model.record()
         self.setWindowTitle("Añadir Registro" if row < 0 else "Editar Registro")
         self.setMinimumWidth(400)
-        
+
         self.layout = QFormLayout(self)
         self.widgets = {}
-        
+
         for i in range(self.record.count()):
             field_name = self.record.fieldName(i)
             if field_name.lower() == "idx" and row < 0:
                 continue
-            
+
             label = field_name.replace("_", " ").title()
-            
+
             if "is_" in field_name.lower():
                 widget = QCheckBox()
                 if row >= 0:
@@ -46,7 +47,7 @@ class DatabaseForm(QDialog):
                 widget = QLineEdit()
                 if row >= 0:
                     widget.setText(str(self.record.value(i) or ""))
-            
+
             self.layout.addRow(label, widget)
             self.widgets[field_name] = widget
 
@@ -66,7 +67,7 @@ class DatabaseForm(QDialog):
                     self.record.setValue(i, widget.value())
                 else:
                     self.record.setValue(i, widget.text())
-        
+
         if self.row >= 0:
             if self.model.setRecord(self.row, self.record):
                 if self.model.submitAll():
@@ -83,7 +84,7 @@ class DatabaseForm(QDialog):
                     QMessageBox.critical(self, "Error", f"No se pudo guardar en la base de datos: {self.model.lastError().text()}")
             else:
                 QMessageBox.critical(self, "Error", "No se pudo añadir el registro al modelo.")
-        
+
         self.model.select()
 
 class ColumnHeaderView(QHeaderView):
@@ -97,19 +98,19 @@ class ColumnHeaderView(QHeaderView):
         logical_index = self.logicalIndexAt(pos)
         if logical_index < 0:
             return
-        
+
         menu = QMenu(self)
         add_left = menu.addAction("Agregar columna (izquierda)")
         add_right = menu.addAction("Agregar columna (derecha)")
         rename_col = menu.addAction("Renombrar columna")
         delete_col = menu.addAction("Eliminar columna")
-        
+
         action = menu.exec(self.mapToGlobal(pos))
         if not action:
             return
-        
+
         # Hierarchy: ColumnHeaderView -> QTableView -> QSplitter -> DataTableTab
-        table_tab = self.parent().parent().parent() 
+        table_tab = self.parent().parent().parent()
         if action == add_left:
             table_tab.add_column(logical_index)
         elif action == add_right:
@@ -125,48 +126,48 @@ class DataTableTab(QWidget):
         self.db_conn_name = db_conn_name
         self.table_name = table_name
         self.layout = QVBoxLayout(self)
-        
+
         self.model = QSqlTableModel(self, QSqlDatabase.database(db_conn_name))
         self.model.setTable(table_name)
         self.model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
         self.model.select()
-        
+
         self.view = QTableView()
         self.view.setModel(self.model)
         self.view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        
+
         # Custom Header
         header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
         self.view.setHorizontalHeader(header)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        
+
         # CRUD Buttons
         self.btn_layout = QHBoxLayout()
         self.btn_add = QPushButton("Añadir")
         self.btn_edit = QPushButton("Editar")
         self.btn_delete = QPushButton("Borrar")
-        
+
         self.btn_add.clicked.connect(self.add_record)
         self.btn_edit.clicked.connect(self.edit_record)
         self.btn_delete.clicked.connect(self.delete_record)
-        
+
         self.btn_layout.addWidget(self.btn_add)
         self.btn_layout.addWidget(self.btn_edit)
         self.btn_layout.addWidget(self.btn_delete)
-        
+
         # Main Splitter for Table and Console
         self.main_splitter = QSplitter(Qt.Orientation.Vertical)
         self.main_splitter.addWidget(self.view)
-        
+
         # SQL Console Area
         self.console_area = QWidget()
         self.console_layout = QVBoxLayout(self.console_area)
         self.console_layout.setContentsMargins(0, 5, 0, 0)
-        
+
         # Splitter for SQL Command and Log
         self.sql_splitter = QSplitter(Qt.Orientation.Horizontal)
-        
+
         # Left side: Command
         self.cmd_container = QWidget()
         cmd_layout = QVBoxLayout(self.cmd_container)
@@ -174,7 +175,7 @@ class DataTableTab(QWidget):
         cmd_layout.addWidget(QLabel("SQL Commands:"))
         self.sql_console = QPlainTextEdit()
         cmd_layout.addWidget(self.sql_console)
-        
+
         # Right side: Log
         self.log_container = QWidget()
         log_layout = QVBoxLayout(self.log_container)
@@ -184,20 +185,20 @@ class DataTableTab(QWidget):
         self.log_viewer.setReadOnly(True)
         self.log_viewer.setStyleSheet("background-color: black; color: white; font-family: Consolas, monospace;")
         log_layout.addWidget(self.log_viewer)
-        
+
         self.sql_splitter.addWidget(self.cmd_container)
         self.sql_splitter.addWidget(self.log_container)
-        
+
         self.btn_run_sql = QPushButton("Ejecutar SQL")
         self.btn_run_sql.clicked.connect(self.run_sql_script)
-        
+
         self.console_layout.addWidget(self.sql_splitter)
         self.console_layout.addWidget(self.btn_run_sql)
-        
+
         self.main_splitter.addWidget(self.console_area)
         self.main_splitter.setStretchFactor(0, 3)
         self.main_splitter.setStretchFactor(1, 1)
-        
+
         self.layout.addWidget(self.main_splitter)
         self.layout.addLayout(self.btn_layout)
 
@@ -210,7 +211,7 @@ class DataTableTab(QWidget):
         else:
             fmt.setForeground(QColor("white"))
             prefix = "[INFO] "
-        
+
         self.log_viewer.setCurrentCharFormat(fmt)
         self.log_viewer.insertPlainText(f"{prefix}{message}\n")
         self.log_viewer.moveCursor(QTextCursor.MoveOperation.End)
@@ -241,26 +242,26 @@ class DataTableTab(QWidget):
         full_script = self.sql_console.toPlainText().strip()
         if not full_script:
             return
-        
+
         db = QSqlDatabase.database(self.db_conn_name)
         # Split by semicolon but ignore inside quotes
         statements = re.split(r';(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)', full_script)
-        
+
         success_count = 0
         error_occurred = False
-        
+
         for statement in statements:
             stmt = statement.strip()
             if not stmt or stmt.upper() == "COMMIT":
                 continue
-            
+
             query = QSqlQuery(db)
             if query.exec(stmt):
                 success_count += 1
                 # Detect CREATE TABLE or DROP TABLE
                 create_match = re.search(r"CREATE\s+TABLE\s+(\w+)", stmt, re.IGNORECASE)
                 drop_match = re.search(r"DROP\s+TABLE\s+(\w+)", stmt, re.IGNORECASE)
-                
+
                 if create_match:
                     new_table = create_match.group(1)
                     self.table_name = new_table
@@ -276,7 +277,7 @@ class DataTableTab(QWidget):
                 self.log(f"Error en sentencia: {stmt[:30]}... -> {err_msg}", is_error=True)
                 error_occurred = True
                 break
-        
+
         if success_count > 0:
             self.log(f"Ejecutadas con éxito {success_count} sentencias.")
             self.model.select()
@@ -287,16 +288,17 @@ class DataTableTab(QWidget):
         col_name, ok = QInputDialog.getText(self, "Nueva Columna", "Nombre de la columna:")
         if not ok or not col_name:
             return
-        
+
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
-        
+
         current_cols_count = self.model.record().count()
         if query.exec(f"ALTER TABLE \"{self.table_name}\" ADD COLUMN \"{col_name}\" TEXT"):
             self.log(f"Columna '{col_name}' añadida.")
+            self.update_sql_file_add_column(col_name)
             self.model.select()
             if position < current_cols_count:
-                QMessageBox.information(self, "Columna Añadida", 
+                QMessageBox.information(self, "Columna Añadida",
                     "Nota: SQLite solo permite añadir columnas al final.")
         else:
             self.log(f"Error añadiendo columna: {query.lastError().text()}", is_error=True)
@@ -306,14 +308,15 @@ class DataTableTab(QWidget):
         new_name, ok = QInputDialog.getText(self, "Renombrar Columna", f"Nuevo nombre para '{old_name}':", text=old_name)
         if not ok or not new_name or new_name == old_name:
             return
-        
+
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         self.model.submitAll()
-        
+
         sql = f'ALTER TABLE "{self.table_name}" RENAME COLUMN "{old_name}" TO "{new_name}"'
         if query.exec(sql):
             self.log(f"Columna '{old_name}' renombrada a '{new_name}'.")
+            self.update_sql_file_rename_column(old_name, new_name)
             self.model.setTable(self.table_name)
             self.model.select()
         else:
@@ -323,11 +326,12 @@ class DataTableTab(QWidget):
         col_name = self.model.record().fieldName(index)
         if QMessageBox.question(self, "Confirmar", f"¿Seguro que quieres eliminar la columna '{col_name}'?") != QMessageBox.StandardButton.Yes:
             return
-        
+
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         if query.exec(f'ALTER TABLE "{self.table_name}" DROP COLUMN "{col_name}"'):
             self.log(f"Columna '{col_name}' eliminada.")
+            self.update_sql_file_drop_column(col_name)
             self.model.setTable(self.table_name)
             self.model.select()
         else:
@@ -344,36 +348,115 @@ class DataTableTab(QWidget):
     def set_console_visible(self, visible):
         self.console_area.setVisible(visible)
 
+    def get_sql_filepath(self):
+        filename = "global.sql" if self.db_conn_name == "global_db" else "yearly.sql"
+        return os.path.join("sql", filename)
+
+    def update_sql_file_add_column(self, col_name):
+        path = self.get_sql_filepath()
+        if not os.path.exists(path): return
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Simple regex to find the CREATE TABLE block and add the column before );
+        pattern = rf'(CREATE TABLE {self.table_name}\s*\([^;]*)\);'
+        replacement = r'\1,    ' + col_name + ' TEXT\n);'
+        new_content = re.sub(pattern, replacement, content, flags=re.IGNORECASE | re.DOTALL)
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+    def update_sql_file_rename_column(self, old_name, new_name):
+        path = self.get_sql_filepath()
+        if not os.path.exists(path): return
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # Regex to find the table block and then replace the column name within it
+        table_pattern = rf'(CREATE TABLE {self.table_name}\s*\()(.*?)(\);)'
+
+        def replace_col(match):
+            prefix = match.group(1)
+            body = match.group(2)
+            suffix = match.group(3)
+            # Match word with optional quotes
+            new_body = re.sub(rf'\b"{old_name}"\b|\b{old_name}\b', new_name, body)
+            return prefix + new_body + suffix
+
+        new_content = re.sub(table_pattern, replace_col, content, flags=re.IGNORECASE | re.DOTALL)
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+    def update_sql_file_drop_column(self, col_name):
+        path = self.get_sql_filepath()
+        if not os.path.exists(path): return
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        table_pattern = rf'(CREATE TABLE {self.table_name}\s*\()(.*?)(\);)'
+
+        def replace_col(match):
+            prefix = match.group(1)
+            body = match.group(2)
+            suffix = match.group(3)
+            # Remove line with column name and handle trailing/leading commas
+            lines = body.split('\n')
+            new_lines = []
+            for line in lines:
+                if not re.search(rf'\b"{col_name}"\b|\b{col_name}\b', line):
+                    new_lines.append(line)
+
+            # Re-clean commas
+            body_text = '\n'.join(new_lines)
+            body_text = re.sub(r',\s*\n\s*\)', '\n)', body_text) # remove comma before closing paren
+            body_text = re.sub(r'\(\s*,', '(', body_text) # remove comma after opening paren
+
+            return prefix + body_text + suffix
+
+        new_content = re.sub(table_pattern, replace_col, content, flags=re.IGNORECASE | re.DOTALL)
+
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+
+    def set_auto_resize(self, enabled):
+        header = self.view.horizontalHeader()
+        if enabled:
+            header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        else:
+            header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+            self.view.resizeColumnsToContents()
+
 class PrecureManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Precure Media Manager - Core System")
         self.setGeometry(100, 100, 1200, 800)
-        
+
         self.init_db_connections()
-        
+
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         self.main_layout = QHBoxLayout(central_widget)
-        
+
         self.init_sidebar()
-        
+
         self.tabs = QTabWidget()
         self.main_layout.addWidget(self.tabs, 4)
-        
+
         # Tabs initialization
         self.registry_tab = DataTableTab("year_db", "T_Registry")
         self.resources_tab = DataTableTab("year_db", "T_Resources")
-        
+
         self.global_tab_container = QWidget()
         global_layout = QVBoxLayout(self.global_tab_container)
         self.global_subtabs = QTabWidget()
-        
+
         self.catalog_tab = DataTableTab("global_db", "T_Type_Catalog_Reg")
         self.opener_tab = DataTableTab("global_db", "T_Opener_Models")
         self.type_res_tab = DataTableTab("global_db", "T_Type_Resources")
         self.seasons_tab = DataTableTab("global_db", "T_Seasons")
-        
+
         self.global_subtabs.addTab(self.catalog_tab, "Catálogo")
         self.global_subtabs.addTab(self.opener_tab, "Modelos Opener")
         self.global_subtabs.addTab(self.type_res_tab, "Tipos Recursos")
@@ -386,39 +469,53 @@ class PrecureManagerApp(QMainWindow):
 
         self.init_menu_bar()
 
+    def set_auto_resize_columns(self, enabled):
+        for tab in [self.registry_tab, self.resources_tab, self.catalog_tab,
+                    self.opener_tab, self.type_res_tab, self.seasons_tab]:
+            tab.set_auto_resize(enabled)
+
     def init_menu_bar(self):
         menubar = self.menuBar()
-        
+
         # Archivo
         file_menu = menubar.addMenu("Archivo")
         exit_action = QAction("Salir", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
-        
+
         # Edición
         edit_menu = menubar.addMenu("Edición")
         add_row_action = QAction("Añadir fila", self)
         add_row_action.triggered.connect(self.on_add_row_requested)
         edit_menu.addAction(add_row_action)
-        
+
         scan_masters_action = QAction("Escanear carpetas maestras", self)
         scan_masters_action.triggered.connect(self.scan_master_folders)
         edit_menu.addAction(scan_masters_action)
-        
+
+        migrate_resources_action = QAction("Migrar Recursos de años", self)
+        migrate_resources_action.triggered.connect(self.migrate_resources_from_excel)
+        edit_menu.addAction(migrate_resources_action)
+
         # Vista
         view_menu = menubar.addMenu("Vista")
         panels_submenu = view_menu.addMenu("Mostrar Paneles")
-        
+
         toggle_sidebar = QAction("Años", self, checkable=True)
         toggle_sidebar.setChecked(True)
         toggle_sidebar.triggered.connect(lambda: self.dock.setVisible(toggle_sidebar.isChecked()))
         panels_submenu.addAction(toggle_sidebar)
-        
+
         toggle_console = QAction("Consola SQL", self, checkable=True)
         toggle_console.setChecked(True)
         toggle_console.triggered.connect(self.toggle_sql_consoles)
         panels_submenu.addAction(toggle_console)
-        
+
+        auto_resize_action = QAction("Auto-ajustar ancho de columnas", self, checkable=True)
+        auto_resize_action.setChecked(True)
+        auto_resize_action.triggered.connect(self.set_auto_resize_columns)
+        view_menu.addAction(auto_resize_action)
+
         # Ayuda
         help_menu = menubar.addMenu("Ayuda")
         about_action = QAction("Acerca de", self)
@@ -432,19 +529,146 @@ class PrecureManagerApp(QMainWindow):
             current_tab = self.global_subtabs.currentWidget()
         else:
             current_tab = current_widget
-            
+
         if isinstance(current_tab, DataTableTab):
             current_tab.add_record()
+
+    def migrate_resources_from_excel(self):
+        if not os.path.exists(BASE_DIR_PATH):
+            QMessageBox.critical(self, "Error", f"Ruta base {BASE_DIR_PATH} no encontrada.")
+            return
+
+        total_migrated = 0
+
+        # Load Global FK mappings
+        type_res_map = {} # text -> id
+        seasons_map = {} # text -> text (primary key is name)
+
+        db_global = QSqlDatabase.database("global_db")
+        q = QSqlQuery(db_global)
+        q.exec("SELECT idx, type_resource FROM T_Type_Resources")
+        while q.next():
+            type_res_map[q.value(1)] = q.value(0)
+
+        q.exec("SELECT precure_season_name FROM T_Seasons")
+        while q.next():
+            seasons_map[q.value(0)] = q.value(0)
+
+        for year in range(2004, 2027):
+            px = year - 2003
+            px_str = f"{px:02d}"
+            excel_path = os.path.join(BASE_DIR_PATH, str(year), f"{px_str}. identity_propeties", f"{px_str}. le_etude.overwrite.xlsx")
+
+            if not os.path.exists(excel_path):
+                continue
+
+            try:
+                wb = openpyxl.load_workbook(excel_path, data_only=True)
+                if "material_list" not in wb.sheetnames:
+                    continue
+
+                sheet = wb["material_list"]
+
+                db_year_conn_name = f"migration_db_{year}"
+                db_year_path = get_yearly_db_path(year)
+
+                db_year = QSqlDatabase.addDatabase("QSQLITE", db_year_conn_name)
+                db_year.setDatabaseName(db_year_path)
+                if not db_year.open():
+                    print(f"Could not open yearly DB for {year}")
+                    continue
+
+                # Get existing titles to handle duplicates
+                existing_titles = set()
+                q_titles = QSqlQuery(db_year)
+                q_titles.exec("SELECT title_material FROM T_Resources")
+                while q_titles.next():
+                    existing_titles.add(q_titles.value(0))
+
+                query = QSqlQuery(db_year)
+
+                # Start from row 4
+                for row_idx in range(4, sheet.max_row + 1):
+                    # Columns according to mapping:
+                    # E: Type Material, F: Season Name, G: Ep Num, H: Ep Sp Num, I: Title Material,
+                    # J: Released (UTC+09), K: Released Soundtrack, L: Released Spinoff, M: Duration File, N: DateTime Download
+                    # O: Path of File
+
+                    type_mat_text = sheet.cell(row=row_idx, column=5).value
+                    season_name_text = sheet.cell(row=row_idx, column=6).value
+                    ep_num = sheet.cell(row=row_idx, column=7).value
+                    ep_sp_num = sheet.cell(row=row_idx, column=8).value
+                    title_material = sheet.cell(row=row_idx, column=9).value
+                    released_09 = sheet.cell(row=row_idx, column=10).value
+                    released_sdtr = sheet.cell(row=row_idx, column=11).value
+                    released_spin = sheet.cell(row=row_idx, column=12).value
+                    duration = sheet.cell(row=row_idx, column=13).value
+                    dt_download = sheet.cell(row=row_idx, column=14).value
+                    path_file = sheet.cell(row=row_idx, column=15).value
+
+                    # Check for empty rows (Title is mandatory)
+                    if not title_material:
+                        continue
+
+                    # Handle duplicates
+                    base_title = str(title_material)
+                    final_title = base_title
+                    counter = 2
+                    while final_title in existing_titles:
+                        final_title = f"{base_title} ({counter})"
+                        counter += 1
+
+                    existing_titles.add(final_title)
+
+                    # FK Resolving
+                    type_mat_id = type_res_map.get(type_mat_text)
+                    season_name_fk = seasons_map.get(season_name_text)
+
+                    query.prepare("""
+                        INSERT INTO T_Resources (
+                            title_material, type_material, precure_season_name, ep_num, ep_sp_num,
+                            released_utc_09, released_soundtrack_utc_09, released_spinoff_utc_09,
+                            duration_file, datetime_download, relative_path_of_file,
+                            relative_path_of_soundtracks, relative_path_of_lyrics
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """)
+                    query.addBindValue(final_title)
+                    query.addBindValue(type_mat_id)
+                    query.addBindValue(season_name_fk)
+                    query.addBindValue(ep_num)
+                    query.addBindValue(ep_sp_num)
+                    query.addBindValue(str(released_09) if released_09 else None)
+                    query.addBindValue(str(released_sdtr) if released_sdtr else None)
+                    query.addBindValue(str(released_spin) if released_spin else None)
+                    query.addBindValue(str(duration) if duration else None)
+                    query.addBindValue(str(dt_download) if dt_download else None)
+                    query.addBindValue(str(path_file) if path_file else None)
+                    query.addBindValue(None) # Path of Soundtracks (Empty)
+                    query.addBindValue(None) # Path of Lyrics (Empty)
+
+                    if query.exec():
+                        total_migrated += 1
+                    else:
+                        print(f"Error migrating row {row_idx} in year {year}: {query.lastError().text()}")
+
+                db_year.close()
+                QSqlDatabase.removeDatabase(db_year_conn_name)
+
+            except Exception as e:
+                print(f"Error processing {excel_path}: {e}")
+
+        self.resources_tab.model.select()
+        QMessageBox.information(self, "Migración", f"Se migraron {total_migrated} recursos en total.")
 
     def scan_master_folders(self):
         if not os.path.exists(BASE_DIR_PATH):
             QMessageBox.critical(self, "Error", f"Ruta base {BASE_DIR_PATH} no encontrada.")
             return
-            
+
         db = QSqlDatabase.database("global_db")
         query = QSqlQuery(db)
         updated_count = 0
-        
+
         for year in range(2004, 2027):
             year_path = os.path.join(BASE_DIR_PATH, str(year))
             if os.path.exists(year_path):
@@ -457,7 +681,7 @@ class PrecureManagerApp(QMainWindow):
                 except Exception as e:
                     print(f"Error escaneando {year_path}: {e}")
                     continue
-                
+
                 if found_folder:
                     # Update T_Seasons where year = year
                     q = QSqlQuery(db)
@@ -495,27 +719,27 @@ class PrecureManagerApp(QMainWindow):
     def init_sidebar(self):
         self.dock = QDockWidget("Años", self)
         self.dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
-        
+
         self.year_tree = QTreeView()
         self.year_tree.setHeaderHidden(True)
         self.year_model = QStandardItemModel()
         root_node = self.year_model.invisibleRootItem()
-        
+
         for year in range(2004, 2027):
             item = QStandardItem(str(year))
             item.setEditable(False)
             root_node.appendRow(item)
-            
+
         self.year_tree.setModel(self.year_model)
         self.year_tree.clicked.connect(self.on_year_selected)
-        
+
         self.dock.setWidget(self.year_tree)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dock)
 
     def on_year_selected(self, index):
         year = index.data()
         db_path = get_yearly_db_path(year)
-        
+
         db = QSqlDatabase.database("year_db")
         db.close()
         db.setDatabaseName(db_path)
@@ -528,7 +752,7 @@ class PrecureManagerApp(QMainWindow):
 if __name__ == "__main__":
     init_databases()
     app = QApplication(sys.argv)
-    app.setStyle("Fusion") 
+    app.setStyle("Fusion")
     window = PrecureManagerApp()
     window.show()
     sys.exit(app.exec())
