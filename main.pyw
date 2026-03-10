@@ -328,13 +328,19 @@ class DataTableTab(QWidget):
         if not ok or not col_name:
             return
 
+        self.model.submitAll()
+        self.update_sql_file_add_column(col_name)
+
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
+        sql = f'ALTER TABLE "{self.table_name}" ADD COLUMN "{col_name}" TEXT'
 
         current_cols_count = self.model.record().count()
-        if query.exec(f"ALTER TABLE \"{self.table_name}\" ADD COLUMN \"{col_name}\" TEXT"):
-            self.log(f"Columna '{col_name}' añadida.")
-            self.update_sql_file_add_column(col_name)
+        if query.exec(sql):
+            self.log(f"Columna '{col_name}' añadida en base de datos actual.")
+            if self.db_conn_name == "year_db":
+                self.propagate_schema_change(sql, f"Columna '{col_name}' añadida")
+
             self.model.select()
             if position < current_cols_count:
                 QMessageBox.information(self, "Columna Añadida",
@@ -349,70 +355,100 @@ class DataTableTab(QWidget):
             return
 
         self.model.submitAll()
-
-        # 1. Update SQL file first
         self.update_sql_file_rename_column(old_name, new_name)
 
-        # 2. Apply to current connection
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         sql = f'ALTER TABLE "{self.table_name}" RENAME COLUMN "{old_name}" TO "{new_name}"'
 
         if query.exec(sql):
             self.log(f"Columna '{old_name}' renombrada a '{new_name}' en base de datos actual.")
-
-            # 3. Propagate if it's a yearly database
             if self.db_conn_name == "year_db":
-                self.propagate_rename_column_to_all_years(old_name, new_name)
+                # For rename, we need custom logic to check existence, but we can pass the SQL
+                self.propagate_schema_change(sql, f"Columna renombrada a '{new_name}'")
 
             self.model.setTable(self.table_name)
             self.model.select()
         else:
             self.log(f"Error renombrando columna: {query.lastError().text()}", is_error=True)
 
-    def propagate_rename_column_to_all_years(self, old_name, new_name):
+    def delete_column(self, index):
+        col_name = self.model.record().fieldName(index)
+        if QMessageBox.question(self, "Confirmar", f"¿Seguro que quieres eliminar la columna '{col_name}'?") != QMessageBox.StandardButton.Yes:
+            return
+
+        self.model.submitAll()
+        self.update_sql_file_drop_column(col_name)
+
+        db = QSqlDatabase.database(self.db_conn_name)
+        query = QSqlQuery(db)
+        sql = f'ALTER TABLE "{self.table_name}" DROP COLUMN "{col_name}"'
+
+        if query.exec(sql):
+            self.log(f"Columna '{col_name}' eliminada en base de datos actual.")
+            if self.db_conn_name == "year_db":
+                self.propagate_schema_change(sql, f"Columna '{col_name}' eliminada")
+
+            self.model.setTable(self.table_name)
+            self.model.select()
+        else:
+            self.log(f"Error eliminando columna: {query.lastError().text()}", is_error=True)
+
+    def propagate_schema_change(self, sql_command, success_msg_prefix):
         from db_manager import init_yearly_dbs, get_yearly_db_path
 
-        # Ensure all databases exist (will use updated yearly.sql if created now)
+        # Ensure all databases exist
         init_yearly_dbs()
 
         current_db_path = os.path.abspath(QSqlDatabase.database(self.db_conn_name).databaseName())
+        years = list(range(2004, 2027))
 
-        for year in range(2004, 2027):
+        progress = QProgressDialog("Propagando cambios de esquema...", "Cancelar", 0, len(years), self)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.show()
+
+        for i, year in enumerate(years):
+            progress.setValue(i)
+            progress.setLabelText(f"Procesando año {year}...")
+            QApplication.processEvents()
+
+            if progress.wasCanceled():
+                self.log("Propagación cancelada por el usuario.", is_error=True)
+                break
+
             db_path = os.path.abspath(get_yearly_db_path(year))
-
-            # Skip current if it's the same file
             if db_path == current_db_path:
                 continue
 
             if os.path.exists(db_path):
                 try:
                     conn = sqlite3.connect(db_path)
-                    # Check if old column exists and new doesn't
-                    cursor = conn.execute(f"PRAGMA table_info({self.table_name})")
-                    cols = [row[1] for row in cursor.fetchall()]
-                    if old_name in cols and new_name not in cols:
-                        conn.execute(f'ALTER TABLE "{self.table_name}" RENAME COLUMN "{old_name}" TO "{new_name}"')
+                    # Check if table exists
+                    cursor = conn.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{self.table_name}'")
+                    if cursor.fetchone():
+                        # Additional safety for renames: check if column exists
+                        if "RENAME COLUMN" in sql_command.upper():
+                            # Command format: ALTER TABLE "table" RENAME COLUMN "old" TO "new"
+                            parts = sql_command.split('"')
+                            if len(parts) >= 6:
+                                old_col = parts[3]
+                                new_col = parts[5]
+                                info = conn.execute(f"PRAGMA table_info({self.table_name})").fetchall()
+                                cols = [r[1] for r in info]
+                                # If old column doesn't exist or new one already exists, skip
+                                if old_col not in cols or new_col in cols:
+                                    conn.close()
+                                    continue
+
+                        conn.execute(sql_command)
                         conn.commit()
-                        self.log(f"Columna renombrada en base de datos del año {year}.")
+                        self.log(f"{success_msg_prefix} en base de datos del año {year}.")
                     conn.close()
                 except Exception as e:
-                    self.log(f"Error propagando cambio al año {year}: {e}", is_error=True)
+                    self.log(f"Error en año {year}: {e}", is_error=True)
 
-    def delete_column(self, index):
-        col_name = self.model.record().fieldName(index)
-        if QMessageBox.question(self, "Confirmar", f"¿Seguro que quieres eliminar la columna '{col_name}'?") != QMessageBox.StandardButton.Yes:
-            return
-
-        db = QSqlDatabase.database(self.db_conn_name)
-        query = QSqlQuery(db)
-        if query.exec(f'ALTER TABLE "{self.table_name}" DROP COLUMN "{col_name}"'):
-            self.log(f"Columna '{col_name}' eliminada.")
-            self.update_sql_file_drop_column(col_name)
-            self.model.setTable(self.table_name)
-            self.model.select()
-        else:
-            self.log(f"Error eliminando columna: {query.lastError().text()}", is_error=True)
+        progress.setValue(len(years))
 
     def update_database(self, db_conn_name):
         self.db_conn_name = db_conn_name
