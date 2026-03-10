@@ -2,6 +2,7 @@ import sys
 import os
 import re
 import sqlite3
+import csv
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTabWidget, QLabel, QPushButton, QHBoxLayout,
                              QTreeView, QHeaderView, QDockWidget, QTableView,
@@ -378,6 +379,57 @@ class DataTableTab(QWidget):
             return
 
         self.model.submitAll()
+
+        # Mandatory Backup Logic if column has data
+        from db_manager import get_yearly_db_path
+
+        has_data = False
+        db_paths_to_check = []
+        if self.db_conn_name == "year_db":
+            for y in range(2004, 2027):
+                p = get_yearly_db_path(y)
+                if os.path.exists(p):
+                    db_paths_to_check.append((y, p))
+        else:
+            db_paths_to_check.append((None, QSqlDatabase.database(self.db_conn_name).databaseName()))
+
+        # Check for data
+        for _, p in db_paths_to_check:
+            if self.column_has_data(p, self.table_name, col_name):
+                has_data = True
+                break
+
+        if has_data:
+            ret = QMessageBox.warning(self, "Columna con Datos",
+                f"La columna '{col_name}' contiene datos. Se realizará una exportación a CSV de seguridad antes de borrar.\n¿Deseas continuar?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if ret == QMessageBox.StandardButton.No:
+                return
+
+            # Perform export
+            backup_dir = "backups"
+            if not os.path.exists(backup_dir):
+                os.makedirs(backup_dir)
+
+            progress = QProgressDialog("Exportando backups...", "Cancelar", 0, len(db_paths_to_check), self)
+            progress.setWindowModality(Qt.WindowModality.WindowModal)
+            progress.show()
+
+            for i, (year, p) in enumerate(db_paths_to_check):
+                progress.setValue(i)
+                label = f"Backup año {year}..." if year else "Backup base de datos..."
+                progress.setLabelText(label)
+                QApplication.processEvents()
+                if progress.wasCanceled(): break
+
+                suffix = f"_{year}" if year else ""
+                csv_path = os.path.join(backup_dir, f"{self.table_name}{suffix}_pre_delete_{col_name}.csv")
+                self.export_table_to_csv(p, self.table_name, csv_path)
+
+            progress.setValue(len(db_paths_to_check))
+            QMessageBox.information(self, "Backup Completado", f"Se han guardado copias de seguridad en la carpeta '{backup_dir}'.")
+
+        # Proceed with deletion
         self.update_sql_file_drop_column(col_name)
 
         db = QSqlDatabase.database(self.db_conn_name)
@@ -393,6 +445,36 @@ class DataTableTab(QWidget):
             self.model.select()
         else:
             self.log(f"Error eliminando columna: {query.lastError().text()}", is_error=True)
+
+    def column_has_data(self, db_path, table_name, col_name):
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.execute(f"PRAGMA table_info({table_name})")
+            cols = [row[1] for row in cursor.fetchall()]
+            if col_name not in cols:
+                conn.close()
+                return False
+
+            cursor = conn.execute(f'SELECT 1 FROM "{table_name}" WHERE "{col_name}" IS NOT NULL AND "{col_name}" != "" LIMIT 1')
+            row = cursor.fetchone()
+            conn.close()
+            return row is not None
+        except:
+            return False
+
+    def export_table_to_csv(self, db_path, table_name, csv_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.execute(f'SELECT * FROM "{table_name}"')
+            columns = [description[0] for description in cursor.description]
+
+            with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(columns)
+                writer.writerows(cursor.fetchall())
+            conn.close()
+        except Exception as e:
+            self.log(f"Error exportando CSV {csv_path}: {e}", is_error=True)
 
     def propagate_schema_change(self, sql_command, success_msg_prefix):
         from db_manager import init_yearly_dbs, get_yearly_db_path
