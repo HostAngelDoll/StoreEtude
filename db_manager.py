@@ -28,7 +28,7 @@ def run_sql_file(conn, filename):
 def init_global_db(reset=False):
     if reset and os.path.exists(GLOBAL_DB_PATH):
         os.remove(GLOBAL_DB_PATH)
-
+        
     conn = get_db_connection(GLOBAL_DB_PATH)
     run_sql_file(conn, "global.sql")
     conn.commit()
