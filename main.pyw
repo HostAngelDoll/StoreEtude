@@ -1458,21 +1458,37 @@ class PrecureManagerApp(QMainWindow):
                 upd.exec()
 
     def process_soundtracks(self, db, master_path, type_ids, overwrite):
-        sd_type_id = type_ids.get("Soundtrack")
-        if not sd_type_id: return
+        sd_types = ["Soundtrack", "Soundtrack Sp"]
+        sd_type_ids = [type_ids.get(t) for t in sd_types if type_ids.get(t)]
 
-        sd_folder = os.path.join(master_path, "soundtracks")
-        ly_folder = os.path.join(master_path, "lyrics")
+        if not sd_type_ids: return
 
-        if not os.path.exists(sd_folder): return
+        # Search for folders containing soundtracks and lyrics (case-insensitive)
+        sd_folder_name = None
+        ly_folder_name = None
+        for item in os.listdir(master_path):
+            if os.path.isdir(os.path.join(master_path, item)):
+                if "soundtrack" in item.lower():
+                    sd_folder_name = item
+                elif "lyrics" in item.lower():
+                    ly_folder_name = item
+
+        if not sd_folder_name:
+            self.log("Carpeta de soundtracks no encontrada.", is_error=True)
+            return
+
+        sd_folder = os.path.join(master_path, sd_folder_name)
+        ly_folder = os.path.join(master_path, ly_folder_name) if ly_folder_name else None
 
         query = QSqlQuery(db)
-        sql = "SELECT title_material FROM T_Resources WHERE type_material = ?"
+        sql = f"SELECT title_material FROM T_Resources WHERE type_material IN ({','.join(['?']*len(sd_type_ids))})"
         if not overwrite:
             sql += " AND (relative_path_of_soundtracks IS NULL OR relative_path_of_soundtracks = '')"
 
         query.prepare(sql)
-        query.addBindValue(sd_type_id)
+        for tid in sd_type_ids:
+            query.addBindValue(tid)
+
         if not query.exec(): return
 
         while query.next():
@@ -1489,7 +1505,7 @@ class PrecureManagerApp(QMainWindow):
 
             # Look for exact title in lyrics folder
             found_ly = None
-            if os.path.exists(ly_folder):
+            if ly_folder and os.path.exists(ly_folder):
                 for f in os.listdir(ly_folder):
                     base, ext = os.path.splitext(f)
                     if base.strip() == title:
@@ -1503,8 +1519,8 @@ class PrecureManagerApp(QMainWindow):
                 mtime = os.path.getmtime(full_path)
                 dt_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
 
-                rel_sd_path = f"soundtracks/{found_sd}"
-                rel_ly_path = f"lyrics/{found_ly}" if found_ly else None
+                rel_sd_path = f"{sd_folder_name}/{found_sd}"
+                rel_ly_path = f"{ly_folder_name}/{found_ly}" if found_ly and ly_folder_name else None
 
                 upd = QSqlQuery(db)
                 upd.prepare("""
@@ -1522,6 +1538,13 @@ class PrecureManagerApp(QMainWindow):
                 upd.addBindValue(dt_str)
                 upd.addBindValue(title)
                 upd.exec()
+            else:
+                # Even if not found, we should ensure relative_path_of_file is NULL for soundtracks if overwriting
+                if overwrite:
+                    upd = QSqlQuery(db)
+                    upd.prepare("UPDATE T_Resources SET relative_path_of_file = NULL WHERE title_material = ?")
+                    upd.addBindValue(title)
+                    upd.exec()
 
     def on_year_selected(self, index):
         year = index.data()
