@@ -1287,12 +1287,15 @@ class PrecureManagerApp(QMainWindow):
 
             try:
                 # 1. Episodes & Spinoffs
+                self.log(f"--- Iniciando Fase 1: Episodios y Spinoffs ({year}) ---")
                 self.process_episodes(db_year, master_path, type_ids, ep_total, overwrite)
 
                 # 2. Movies & Specials
+                self.log(f"--- Iniciando Fase 2: Películas y Especiales ({year}) ---")
                 self.process_movies(db_year, master_path, type_ids, overwrite)
 
                 # 3. Soundtracks & Lyrics
+                self.log(f"--- Iniciando Fase 3: Soundtracks y Letras ({year}) ---")
                 self.process_soundtracks(db_year, master_path, type_ids, overwrite)
 
             except Exception as e:
@@ -1316,6 +1319,13 @@ class PrecureManagerApp(QMainWindow):
             return int(nums[-1]) # Try last number which is often the ep num in filenames
         return None
 
+    def is_valid_file(self, filename, allowed_exts=None):
+        if filename.startswith('.') or filename.lower() in ['thumbs.db', 'desktop.ini']:
+            return False
+        if allowed_exts:
+            return filename.lower().endswith(allowed_exts)
+        return True
+
     def process_episodes(self, db, master_path, type_ids, ep_total, overwrite):
         ep_type_id = type_ids.get("Episodio")
         ep_sp_type_id = type_ids.get("Ep Sp")
@@ -1333,7 +1343,8 @@ class PrecureManagerApp(QMainWindow):
                         spinoff_folder = p
 
         if ep_folder:
-            files = [f for f in os.listdir(ep_folder) if f.lower().endswith(('.mp4', '.mkv', '.avi'))]
+            self.log(f"Procesando carpeta de episodios: {os.path.basename(ep_folder)}")
+            files = [f for f in os.listdir(ep_folder) if self.is_valid_file(f, ('.mp4', '.mkv'))]
             if len(files) != ep_total and ep_total > 0:
                 # Get year from path
                 year_val = os.path.basename(os.path.dirname(master_path))
@@ -1346,7 +1357,8 @@ class PrecureManagerApp(QMainWindow):
                 self.link_files_by_num(db, ep_folder, files, ep_sp_type_id, "ep_sp_num", overwrite)
 
         if spinoff_folder:
-            files = [f for f in os.listdir(spinoff_folder) if f.lower().endswith(('.mp4', '.mkv', '.avi'))]
+            self.log(f"Procesando carpeta de spinoff: {os.path.basename(spinoff_folder)}")
+            files = [f for f in os.listdir(spinoff_folder) if self.is_valid_file(f, ('.mp4', '.mkv'))]
             if ep_type_id:
                 self.link_files_by_num(db, spinoff_folder, files, ep_type_id, "ep_num", overwrite)
 
@@ -1401,7 +1413,9 @@ class PrecureManagerApp(QMainWindow):
         movie_types = ["Pelicula Temp", "All Stars", "Cortometraje", "Espetaculo"]
         movie_type_ids = [type_ids.get(t) for t in movie_types if type_ids.get(t)]
 
-        if not movie_type_ids: return
+        if not movie_type_ids:
+            self.log("No se encontraron IDs para tipos de películas.", is_error=True)
+            return
 
         # Find folders containing e_movie, All Stars, etc.
         movie_folders = []
@@ -1431,6 +1445,7 @@ class PrecureManagerApp(QMainWindow):
             records.append(query.value(0))
 
         # Link records to folders
+        self.log(f"Vinculando {len(movie_folders)} carpetas de películas/especiales...")
         for i in range(min(len(records), len(movie_folders))):
             QApplication.processEvents()
             title = records[i]
@@ -1438,7 +1453,7 @@ class PrecureManagerApp(QMainWindow):
             folder_path = os.path.join(master_path, folder_name)
 
             # Each folder should contain 1 file
-            files = [f for f in os.listdir(folder_path) if os.path.isfile(os.path.join(folder_path, f))]
+            files = [f for f in os.listdir(folder_path) if self.is_valid_file(f, ('.mp4', '.mkv'))]
             if files:
                 filename = files[0]
                 full_path = os.path.join(folder_path, filename)
@@ -1498,6 +1513,7 @@ class PrecureManagerApp(QMainWindow):
             # Look for exact title in soundtracks folder
             found_sd = None
             for f in os.listdir(sd_folder):
+                if not self.is_valid_file(f): continue
                 base, ext = os.path.splitext(f)
                 if base.strip() == title and ext.lower() in ['.mp3', '.mp4', '.m4a']:
                     found_sd = f
@@ -1507,6 +1523,7 @@ class PrecureManagerApp(QMainWindow):
             found_ly = None
             if ly_folder and os.path.exists(ly_folder):
                 for f in os.listdir(ly_folder):
+                    if not self.is_valid_file(f): continue
                     base, ext = os.path.splitext(f)
                     if base.strip() == title:
                         found_ly = f
