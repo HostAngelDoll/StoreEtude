@@ -185,6 +185,7 @@ class ColumnHeaderView(QHeaderView):
         rename_col = menu.addAction("Renombrar columna")
         delete_col = menu.addAction("Eliminar columna")
         menu.addSeparator()
+        copy_col_name = menu.addAction("Copiar nombre de esta columna")
         copy_col_data = menu.addAction("Copiar datos de esta columna")
 
         action = menu.exec(self.mapToGlobal(pos))
@@ -201,6 +202,8 @@ class ColumnHeaderView(QHeaderView):
             table_tab.rename_column(logical_index)
         elif action == delete_col:
             table_tab.delete_column(logical_index)
+        elif action == copy_col_name:
+            table_tab.copy_column_name(logical_index)
         elif action == copy_col_data:
             table_tab.copy_column_data(logical_index)
 
@@ -379,6 +382,12 @@ class DataTableTab(QWidget):
         clipboard = QApplication.clipboard()
         clipboard.setText("\n".join(data_list))
         self.log(f"Datos de columna '{self.model.headerData(index, Qt.Orientation.Horizontal)}' copiados al portapapeles.")
+
+    def copy_column_name(self, index):
+        col_name = self.model.headerData(index, Qt.Orientation.Horizontal)
+        clipboard = QApplication.clipboard()
+        clipboard.setText(col_name)
+        self.log(f"Nombre de columna '{col_name}' copiado al portapapeles.")
 
     def log(self, message, is_error=False):
         self.log_viewer.moveCursor(QTextCursor.MoveOperation.End)
@@ -997,9 +1006,11 @@ class PrecureManagerApp(QMainWindow):
         for i, year in enumerate(years):
             progress.setValue(i)
             progress.setLabelText(f"Procesando año {year}...")
+            self.log(f"Iniciando migración para el año {year}...")
             QApplication.processEvents()
 
             if progress.wasCanceled():
+                self.log("Migración cancelada por el usuario.", is_error=True)
                 break
 
             px = year - 2003
@@ -1248,8 +1259,11 @@ class PrecureManagerApp(QMainWindow):
         for i, year in enumerate(years):
             progress.setValue(i)
             progress.setLabelText(f"Procesando año {year}...")
+            self.log(f"Escaneando recursos para el año {year}...")
             QApplication.processEvents()
-            if progress.wasCanceled(): break
+            if progress.wasCanceled():
+                self.log("Escaneo cancelado por el usuario.", is_error=True)
+                break
 
             # Get master folder and episode total
             q = QSqlQuery(db_global)
@@ -1323,7 +1337,8 @@ class PrecureManagerApp(QMainWindow):
             if len(files) != ep_total and ep_total > 0:
                 # Get year from path
                 year_val = os.path.basename(os.path.dirname(master_path))
-                QMessageBox.warning(self, "Advertencia", f"La carpeta de episodios para el año {year_val} tiene {len(files)} archivos, pero se esperaban {ep_total}.")
+                msg = f"Año {year_val}: Se encontraron {len(files)} archivos de episodios, pero se esperaban {ep_total}."
+                self.log(msg, is_error=True)
 
             if ep_type_id:
                 self.link_files_by_num(db, ep_folder, files, ep_type_id, "ep_num", overwrite)
@@ -1365,6 +1380,7 @@ class PrecureManagerApp(QMainWindow):
 
         for filename, title in updates:
             QApplication.processEvents()
+            self.log(f"Vinculando: {filename} -> {title}")
             full_path = os.path.join(folder_path, filename)
             duration = self.get_file_duration(full_path)
             mtime = os.path.getmtime(full_path)
@@ -1481,6 +1497,7 @@ class PrecureManagerApp(QMainWindow):
                         break
 
             if found_sd:
+                self.log(f"Vinculando soundtrack: {found_sd}")
                 full_path = os.path.join(sd_folder, found_sd)
                 duration = self.get_file_duration(full_path)
                 mtime = os.path.getmtime(full_path)
@@ -1494,6 +1511,7 @@ class PrecureManagerApp(QMainWindow):
                     UPDATE T_Resources
                     SET relative_path_of_soundtracks = ?,
                         relative_path_of_lyrics = ?,
+                        relative_path_of_file = NULL,
                         duration_file = ?,
                         datetime_download = ?
                     WHERE title_material = ?
@@ -1521,6 +1539,11 @@ class PrecureManagerApp(QMainWindow):
             self.registry_tab.update_database("year_db")
         else:
             QMessageBox.critical(self, "Error", f"No se pudo abrir la base de datos del año {year}.\n¿Está el disco E: conectado?")
+
+    def log(self, message, is_error=False):
+        # By default, log to resources_tab as it's the main focus for scans/migration
+        if hasattr(self, 'resources_tab'):
+            self.resources_tab.log(message, is_error)
 
 if __name__ == "__main__":
     init_databases()
