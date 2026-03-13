@@ -1360,6 +1360,9 @@ class PrecureManagerApp(QMainWindow):
                     updates.append((f, title))
                     break
 
+        # Get relative folder name (from master_path)
+        folder_name = os.path.basename(folder_path)
+
         for filename, title in updates:
             QApplication.processEvents()
             full_path = os.path.join(folder_path, filename)
@@ -1367,9 +1370,12 @@ class PrecureManagerApp(QMainWindow):
             mtime = os.path.getmtime(full_path)
             dt_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
 
+            # Full relative path: folder/filename
+            rel_path = f"{folder_name}/{filename}"
+
             upd = QSqlQuery(db)
             upd.prepare("UPDATE T_Resources SET relative_path_of_file = ?, duration_file = ?, datetime_download = ? WHERE title_material = ?")
-            upd.addBindValue(filename)
+            upd.addBindValue(rel_path)
             upd.addBindValue(duration)
             upd.addBindValue(dt_str)
             upd.addBindValue(title)
@@ -1425,7 +1431,7 @@ class PrecureManagerApp(QMainWindow):
                 dt_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
 
                 # Path should be folder/file
-                rel_path = os.path.join(folder_name, filename)
+                rel_path = f"{folder_name}/{filename}"
 
                 upd = QSqlQuery(db)
                 upd.prepare("UPDATE T_Resources SET relative_path_of_file = ?, duration_file = ?, datetime_download = ? WHERE title_material = ?")
@@ -1455,13 +1461,13 @@ class PrecureManagerApp(QMainWindow):
 
         while query.next():
             QApplication.processEvents()
-            title = query.value(0)
+            title = str(query.value(0)).strip()
 
             # Look for exact title in soundtracks folder
             found_sd = None
             for f in os.listdir(sd_folder):
                 base, ext = os.path.splitext(f)
-                if base == title and ext.lower() in ['.mp3', '.mp4', '.m4a']:
+                if base.strip() == title and ext.lower() in ['.mp3', '.mp4', '.m4a']:
                     found_sd = f
                     break
 
@@ -1470,7 +1476,7 @@ class PrecureManagerApp(QMainWindow):
             if os.path.exists(ly_folder):
                 for f in os.listdir(ly_folder):
                     base, ext = os.path.splitext(f)
-                    if base == title:
+                    if base.strip() == title:
                         found_ly = f
                         break
 
@@ -1479,6 +1485,9 @@ class PrecureManagerApp(QMainWindow):
                 duration = self.get_file_duration(full_path)
                 mtime = os.path.getmtime(full_path)
                 dt_str = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d %H:%M:%S')
+
+                rel_sd_path = f"soundtracks/{found_sd}"
+                rel_ly_path = f"lyrics/{found_ly}" if found_ly else None
 
                 upd = QSqlQuery(db)
                 upd.prepare("""
@@ -1489,8 +1498,8 @@ class PrecureManagerApp(QMainWindow):
                         datetime_download = ?
                     WHERE title_material = ?
                 """)
-                upd.addBindValue(found_sd)
-                upd.addBindValue(found_ly)
+                upd.addBindValue(rel_sd_path)
+                upd.addBindValue(rel_ly_path)
                 upd.addBindValue(duration)
                 upd.addBindValue(dt_str)
                 upd.addBindValue(title)
