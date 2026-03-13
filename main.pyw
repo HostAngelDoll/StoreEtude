@@ -11,7 +11,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QAbstractItemView, QDialog, QFormLayout, QLineEdit,
                              QSpinBox, QCheckBox, QDialogButtonBox, QMessageBox,
                              QComboBox, QPlainTextEdit, QMenuBar, QMenu, QInputDialog,
-                             QSplitter, QProgressDialog, QRadioButton, QButtonGroup)
+                             QSplitter, QProgressDialog, QRadioButton, QButtonGroup,
+                             QFileDialog)
 from PyQt6.QtCore import Qt, QStringListModel, QSettings
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QCursor, QTextCharFormat, QColor, QTextCursor
 from PyQt6.QtSql import QSqlDatabase, QSqlTableModel, QSqlRecord, QSqlQuery, QSqlRelationalTableModel, QSqlRelation, QSqlRelationalDelegate
@@ -138,10 +139,10 @@ class YearRangeDialog(QDialog):
 
         range_layout = QHBoxLayout()
         self.start_year = QSpinBox()
-        self.start_year.setRange(2004, 2026)
+        self.start_year.setRange(2004, 2050)
         self.start_year.setValue(2004)
         self.end_year = QSpinBox()
-        self.end_year.setRange(2004, 2026)
+        self.end_year.setRange(2004, 2050)
         self.end_year.setValue(int(current_year))
 
         range_layout.addWidget(QLabel("Desde:"))
@@ -183,6 +184,8 @@ class ColumnHeaderView(QHeaderView):
         add_right = menu.addAction("Agregar columna (derecha)")
         rename_col = menu.addAction("Renombrar columna")
         delete_col = menu.addAction("Eliminar columna")
+        menu.addSeparator()
+        copy_col_data = menu.addAction("Copiar datos de esta columna")
 
         action = menu.exec(self.mapToGlobal(pos))
         if not action:
@@ -198,6 +201,8 @@ class ColumnHeaderView(QHeaderView):
             table_tab.rename_column(logical_index)
         elif action == delete_col:
             table_tab.delete_column(logical_index)
+        elif action == copy_col_data:
+            table_tab.copy_column_data(logical_index)
 
 class DataTableTab(QWidget):
     def __init__(self, db_conn_name, table_name, parent=None):
@@ -291,6 +296,89 @@ class DataTableTab(QWidget):
 
         self.layout.addWidget(self.main_splitter)
         self.layout.addLayout(self.btn_layout)
+
+    def export_to_csv(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "Exportar tabla a CSV", f"{self.table_name}.csv", "CSV Files (*.csv)")
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+
+                # Headers
+                headers = []
+                for i in range(self.model.columnCount()):
+                    headers.append(self.model.headerData(i, Qt.Orientation.Horizontal))
+                writer.writerow(headers)
+
+                # Data
+                for r in range(self.model.rowCount()):
+                    row_data = []
+                    for c in range(self.model.columnCount()):
+                        row_data.append(self.model.data(self.model.index(r, c)))
+                    writer.writerow(row_data)
+
+            QMessageBox.information(self, "Exportación", "Tabla exportada con éxito.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo exportar: {e}")
+
+    def import_from_csv(self):
+        msg = ("Asegúrate de que el CSV tenga el mismo número de columnas, "
+               "los mismos nombres y tipos de datos que la tabla actual.\n\n"
+               "Toda la información actual de la tabla será reemplazada.\n"
+               "¿Deseas continuar?")
+        if QMessageBox.warning(self, "Importar CSV", msg, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            return
+
+        file_path, _ = QFileDialog.getOpenFileName(self, "Importar tabla desde CSV", "", "CSV Files (*.csv)")
+        if not file_path:
+            return
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                reader = csv.reader(f)
+                headers = next(reader)
+
+                # Validate headers
+                model_headers = [self.model.headerData(i, Qt.Orientation.Horizontal) for i in range(self.model.columnCount())]
+                if headers != model_headers:
+                    QMessageBox.critical(self, "Error", f"Las columnas no coinciden.\nCSV: {headers}\nTabla: {model_headers}")
+                    return
+
+                # Clear table efficiently
+                db = QSqlDatabase.database(self.db_conn_name)
+                query = QSqlQuery(db)
+                if not query.exec(f"DELETE FROM {self.table_name}"):
+                    QMessageBox.critical(self, "Error", f"No se pudo limpiar la tabla: {query.lastError().text()}")
+                    return
+
+                # Insert data
+                for row_data in reader:
+                    record = self.model.record()
+                    for i, val in enumerate(row_data):
+                        record.setValue(i, val)
+                    self.model.insertRecord(-1, record)
+
+                if self.model.submitAll():
+                    self.model.select()
+                    QMessageBox.information(self, "Importación", "Datos importados con éxito.")
+                else:
+                    QMessageBox.critical(self, "Error", f"Error al guardar los datos: {self.model.lastError().text()}")
+                    self.model.select()
+
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo importar: {e}")
+
+    def copy_column_data(self, index):
+        data_list = []
+        for r in range(self.model.rowCount()):
+            val = self.model.data(self.model.index(r, index))
+            data_list.append(str(val) if val is not None else "")
+
+        clipboard = QApplication.clipboard()
+        clipboard.setText("\n".join(data_list))
+        self.log(f"Datos de columna '{self.model.headerData(index, Qt.Orientation.Horizontal)}' copiados al portapapeles.")
 
     def log(self, message, is_error=False):
         self.log_viewer.moveCursor(QTextCursor.MoveOperation.End)
@@ -773,6 +861,14 @@ class PrecureManagerApp(QMainWindow):
         save_action.triggered.connect(self.save_current_tab)
         file_menu.addAction(save_action)
 
+        export_action = QAction("Exportar tabla a CSV", self)
+        export_action.triggered.connect(self.export_active_tab_to_csv)
+        file_menu.addAction(export_action)
+
+        import_action = QAction("Importar tabla desde CSV", self)
+        import_action.triggered.connect(self.import_active_tab_from_csv)
+        file_menu.addAction(import_action)
+
         exit_action = QAction("Salir", self)
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
@@ -838,6 +934,27 @@ class PrecureManagerApp(QMainWindow):
                 QMessageBox.information(self, "Guardar", "Cambios guardados correctamente.")
             else:
                 QMessageBox.critical(self, "Error", f"No se pudo guardar: {current_tab.model.lastError().text()}")
+
+    def export_active_tab_to_csv(self):
+        current_tab = self.get_active_data_tab()
+        if current_tab:
+            current_tab.export_to_csv()
+
+    def import_active_tab_from_csv(self):
+        current_tab = self.get_active_data_tab()
+        if current_tab:
+            current_tab.import_from_csv()
+
+    def get_active_data_tab(self):
+        current_widget = self.tabs.currentWidget()
+        if current_widget == self.global_tab_container:
+            current_tab = self.global_subtabs.currentWidget()
+        else:
+            current_tab = current_widget
+
+        if isinstance(current_tab, DataTableTab):
+            return current_tab
+        return None
 
     def on_add_row_requested(self):
         # Get active tab (handle nested tabs too)
