@@ -1330,19 +1330,31 @@ class PrecureManagerApp(QMainWindow):
         ep_type_id = type_ids.get("Episodio")
         ep_sp_type_id = type_ids.get("Ep Sp")
 
-        # Search for folder ending in _episodes and .s
-        ep_folder = None
-        spinoff_folder = None
+        # Search for folder ending in _episodes and spinoff
+        ep_candidates = []
+        sp_candidates = []
         for item in os.listdir(master_path):
             p = os.path.join(master_path, item)
             if os.path.isdir(p):
-                if item.lower().endswith(".s"):
-                    if "_episodes" in item.lower():
-                        ep_folder = p
-                    elif "spinoff" in item.lower():
-                        spinoff_folder = p
+                if "_episodes" in item.lower():
+                    ep_candidates.append(p)
+                elif "spinoff" in item.lower():
+                    sp_candidates.append(p)
+
+        def select_best(candidates):
+            if not candidates: return None
+            if len(candidates) == 1: return candidates[0]
+            # Prefer the one with .s
+            for c in candidates:
+                if c.lower().endswith(".s"):
+                    return c
+            return sorted(candidates)[0] # Fallback to first alphabetical
+
+        ep_folder = select_best(ep_candidates)
+        spinoff_folder = select_best(sp_candidates)
 
         if ep_folder:
+            self.log(f"--- Sub-fase Episodios ---")
             self.log(f"Procesando carpeta de episodios: {os.path.basename(ep_folder)}")
             files = [f for f in os.listdir(ep_folder) if self.is_valid_file(f, ('.mp4', '.mkv'))]
             if len(files) != ep_total and ep_total > 0:
@@ -1357,6 +1369,7 @@ class PrecureManagerApp(QMainWindow):
                 self.link_files_by_num(db, ep_folder, files, ep_sp_type_id, "ep_sp_num", overwrite)
 
         if spinoff_folder:
+            self.log(f"--- Sub-fase Spinoff ---")
             self.log(f"Procesando carpeta de spinoff: {os.path.basename(spinoff_folder)}")
             files = [f for f in os.listdir(spinoff_folder) if self.is_valid_file(f, ('.mp4', '.mkv'))]
             if ep_type_id:
@@ -1419,13 +1432,18 @@ class PrecureManagerApp(QMainWindow):
 
         # Find folders containing e_movie, All Stars, etc.
         movie_folders = []
+        keywords = ["e_movie", "all stars", "cortometraje", "espetaculo"]
         for item in os.listdir(master_path):
             p = os.path.join(master_path, item)
             if os.path.isdir(p):
-                if any(m in item for m in ["e_movie", "All Stars", "Cortometraje", "Espetaculo"]):
+                if any(kw in item.lower() for kw in keywords):
                     movie_folders.append(item)
 
         movie_folders.sort() # Alphabetical order
+
+        if not movie_folders:
+            self.log("No se encontraron carpetas de películas/especiales.")
+            return
 
         # Get records from DB ordered by released_utc_09
         query = QSqlQuery(db)
