@@ -6,9 +6,9 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableView,
                              QHeaderView, QPushButton, QLabel, QPlainTextEdit,
                              QSplitter, QMessageBox, QFileDialog, QInputDialog,
                              QApplication, QAbstractItemView, QMenu, QProgressDialog,
-                             QStyle, QStyleOptionButton)
+                             QStyle, QStyleOptionButton, QStyleOptionHeader)
 from PyQt6.QtCore import Qt, QRect, QPoint
-from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor, QPainter
+from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor, QPainter, QPalette
 from datetime import datetime
 from PyQt6.QtSql import (QSqlTableModel, QSqlRelationalTableModel, QSqlRelation,
                          QSqlRelationalDelegate, QSqlQuery, QSqlDatabase)
@@ -24,19 +24,39 @@ class ColumnHeaderView(QHeaderView):
         self.customContextMenuRequested.connect(self.show_context_menu)
         self.filter_rects = {}
 
+    def sectionSizeFromContents(self, logicalIndex):
+        size = super().sectionSizeFromContents(logicalIndex)
+        size.setWidth(size.width() + 20) # Space for filter button
+        return size
+
     def paintSection(self, painter, rect, logicalIndex):
         painter.save()
-        super().paintSection(painter, rect, logicalIndex)
-        painter.restore()
+
+        # Draw background only
+        opt = QStyleOptionHeader()
+        opt.rect = rect
+        opt.section = logicalIndex
+        opt.state = QStyle.StateFlag.State_Enabled
+        self.style().drawControl(QStyle.ControlElement.CE_HeaderSection, opt, painter, self)
+
+        # Draw text in restricted area
+        text = self.model().headerData(logicalIndex, self.orientation(), Qt.ItemDataRole.DisplayRole)
+        margin = 4
+        btn_size = 14
+        text_rect = QRect(rect.left() + margin, rect.top(), rect.width() - btn_size - margin * 3, rect.height())
+        self.style().drawItemText(painter, text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.palette(), True, str(text))
 
         # Draw filter button
-        option = QStyleOptionButton()
-        btn_size = 16
-        option.rect = QRect(rect.right() - btn_size - 2, rect.center().y() - btn_size//2, btn_size, btn_size)
-        option.state = QStyle.StateFlag.State_Enabled
-        option.text = "▼"
-        self.filter_rects[logicalIndex] = option.rect
-        self.style().drawItemText(painter, option.rect, Qt.AlignmentFlag.AlignCenter, self.palette(), True, option.text)
+        btn_rect = QRect(rect.right() - btn_size - margin, rect.center().y() - btn_size//2, btn_size, btn_size)
+        self.filter_rects[logicalIndex] = btn_rect
+
+        painter.setBrush(QColor(200, 200, 200, 100))
+        painter.setPen(Qt.GlobalColor.transparent)
+        painter.drawRoundedRect(btn_rect, 2, 2)
+
+        self.style().drawItemText(painter, btn_rect, Qt.AlignmentFlag.AlignCenter, self.palette(), True, "▼")
+
+        painter.restore()
 
     def mousePressEvent(self, event):
         logical_index = self.logicalIndexAt(event.pos())
