@@ -203,15 +203,44 @@ class DataTableTab(QWidget):
         self.current_sort = (None, None) # (col_index, order)
 
     def show_filter_menu(self, col_index, pos):
-        # Get all unique values for the column directly from DB to ignore active filters
-        field_name = self.model.record().fieldName(col_index)
-        db = self.model.database()
-        query = QSqlQuery(db)
-        query.exec(f'SELECT DISTINCT "{field_name}" FROM "{self.table_name}"')
+        is_relational = isinstance(self.model, QSqlRelationalTableModel)
+        relation = self.model.relation(col_index) if is_relational else QSqlRelation()
 
         all_values = []
-        while query.next():
-            all_values.append(query.value(0))
+        db = self.model.database()
+        query = QSqlQuery(db)
+
+        # Get the underlying field name from the DB schema to avoid model aliases/display names
+        actual_field_name = db.record(self.table_name).fieldName(col_index)
+
+        success = False
+        if relation.isValid() and actual_field_name:
+            rel_table = relation.tableName()
+            rel_index = relation.indexColumn()
+            rel_display = relation.displayColumn()
+
+            sql = f"""
+                SELECT DISTINCT r."{rel_display}"
+                FROM "{self.table_name}" t
+                LEFT JOIN "{rel_table}" r ON t."{actual_field_name}" = r."{rel_index}"
+            """
+            if query.exec(sql):
+                while query.next():
+                    all_values.append(query.value(0))
+                success = True
+        elif actual_field_name:
+            sql = f'SELECT DISTINCT "{actual_field_name}" FROM "{self.table_name}"'
+            if query.exec(sql):
+                while query.next():
+                    all_values.append(query.value(0))
+                success = True
+
+        # Fallback to model data if query failed or returned no values
+        if not success or not all_values:
+            unique_vals = set()
+            for r in range(self.model.rowCount()):
+                unique_vals.add(self.model.data(self.model.index(r, col_index)))
+            all_values = list(unique_vals)
 
         current_selection = self.active_filters.get(col_index)
 
