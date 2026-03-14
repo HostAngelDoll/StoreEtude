@@ -1286,16 +1286,35 @@ class PrecureManagerApp(QMainWindow):
             if not db_year.open(): continue
 
             try:
-                # 1. Episodes & Spinoffs
-                self.log(f"--- Iniciando Fase 1: Episodios y Spinoffs ({year}) ---")
-                self.process_episodes(db_year, master_path, type_ids, ep_total, overwrite)
+                # Get all seasons for this year to distinguish main vs spinoff
+                seasons_info = []
+                sq = QSqlQuery(db_global)
+                sq.prepare("SELECT precure_season_name, is_spinoff, episode_total FROM T_Seasons WHERE year = ?")
+                sq.addBindValue(year)
+                if sq.exec():
+                    while sq.next():
+                        seasons_info.append({
+                            'name': sq.value(0),
+                            'is_spinoff': bool(sq.value(1)),
+                            'ep_total': sq.value(2) or 0
+                        })
 
-                # 2. Movies & Specials
-                self.log(f"--- Iniciando Fase 2: Películas y Especiales ({year}) ---")
+                # 1. Main Episodes
+                self.log(f"--- Iniciando Fase 1: Episodios de Temporada ({year}) ---")
+                for s in [si for si in seasons_info if not si['is_spinoff']]:
+                    self.process_season_episodes(db_year, master_path, type_ids, s, overwrite, is_spinoff=False)
+
+                # 2. Spinoff Episodes
+                self.log(f"--- Iniciando Fase 2: Episodios Spinoff ({year}) ---")
+                for s in [si for si in seasons_info if si['is_spinoff']]:
+                    self.process_season_episodes(db_year, master_path, type_ids, s, overwrite, is_spinoff=True)
+
+                # 3. Movies & Specials
+                self.log(f"--- Iniciando Fase 3: Películas y Especiales ({year}) ---")
                 self.process_movies(db_year, master_path, type_ids, overwrite)
 
-                # 3. Soundtracks & Lyrics
-                self.log(f"--- Iniciando Fase 3: Soundtracks y Letras ({year}) ---")
+                # 4. Soundtracks & Lyrics
+                self.log(f"--- Iniciando Fase 4: Soundtracks y Letras ({year}) ---")
                 self.process_soundtracks(db_year, master_path, type_ids, overwrite)
 
             except Exception as e:
@@ -1326,63 +1345,52 @@ class PrecureManagerApp(QMainWindow):
             return filename.lower().endswith(allowed_exts)
         return True
 
-    def process_episodes(self, db, master_path, type_ids, ep_total, overwrite):
+    def process_season_episodes(self, db, master_path, type_ids, season_info, overwrite, is_spinoff=False):
+        season_name = season_info['name']
+        ep_total = season_info['ep_total']
         ep_type_id = type_ids.get("Episodio")
         ep_sp_type_id = type_ids.get("Ep Sp")
 
-        # Search for folder ending in _episodes and spinoff
-        ep_candidates = []
-        sp_candidates = []
+        # Search for folder
+        candidates = []
+        keyword = "spinoff" if is_spinoff else "_episodes"
         for item in os.listdir(master_path):
             p = os.path.join(master_path, item)
-            if os.path.isdir(p):
-                if "_episodes" in item.lower():
-                    ep_candidates.append(p)
-                elif "spinoff" in item.lower():
-                    sp_candidates.append(p)
+            if os.path.isdir(p) and keyword in item.lower():
+                candidates.append(p)
 
-        def select_best(candidates):
-            if not candidates: return None
-            if len(candidates) == 1: return candidates[0]
-            # Prefer the one with .s
-            for c in candidates:
-                if c.lower().endswith(".s"):
-                    return c
-            return sorted(candidates)[0] # Fallback to first alphabetical
+        def select_best(cands):
+            if not cands: return None
+            if len(cands) == 1: return cands[0]
+            for c in cands:
+                if c.lower().endswith(".s"): return c
+            return sorted(cands)[0]
 
-        ep_folder = select_best(ep_candidates)
-        spinoff_folder = select_best(sp_candidates)
+        target_folder = select_best(candidates)
 
-        if ep_folder:
-            self.log(f"--- Sub-fase Episodios ---")
-            self.log(f"Procesando carpeta de episodios: {os.path.basename(ep_folder)}")
-            files = [f for f in os.listdir(ep_folder) if self.is_valid_file(f, ('.mp4', '.mkv'))]
+        if target_folder:
+            self.log(f"Temporada: {season_name} -> Carpeta: {os.path.basename(target_folder)}")
+            files = [f for f in os.listdir(target_folder) if self.is_valid_file(f, ('.mp4', '.mkv'))]
+
             if len(files) != ep_total and ep_total > 0:
-                # Get year from path
-                year_val = os.path.basename(os.path.dirname(master_path))
-                msg = f"Año {year_val}: Se encontraron {len(files)} archivos de episodios, pero se esperaban {ep_total}."
-                self.log(msg, is_error=True)
+                self.log(f"Advertencia {season_name}: Se encontraron {len(files)} archivos, se esperaban {ep_total}.", is_error=True)
 
             if ep_type_id:
-                self.link_files_by_num(db, ep_folder, files, ep_type_id, "ep_num", overwrite)
+                self.link_files_by_num(db, target_folder, files, ep_type_id, "ep_num", overwrite, season_name)
             if ep_sp_type_id:
-                self.link_files_by_num(db, ep_folder, files, ep_sp_type_id, "ep_sp_num", overwrite)
+                self.link_files_by_num(db, target_folder, files, ep_sp_type_id, "ep_sp_num", overwrite, season_name)
+        else:
+            self.log(f"No se encontró carpeta para {keyword} en {season_name}.", is_error=True)
 
-        if spinoff_folder:
-            self.log(f"--- Sub-fase Spinoff ---")
-            self.log(f"Procesando carpeta de spinoff: {os.path.basename(spinoff_folder)}")
-            files = [f for f in os.listdir(spinoff_folder) if self.is_valid_file(f, ('.mp4', '.mkv'))]
-            if ep_type_id:
-                self.link_files_by_num(db, spinoff_folder, files, ep_type_id, "ep_num", overwrite)
-
-    def link_files_by_num(self, db, folder_path, files, type_id, num_col, overwrite):
+    def link_files_by_num(self, db, folder_path, files, type_id, num_col, overwrite, season_name):
         query = QSqlQuery(db)
-        sql = f"SELECT title_material, {num_col} FROM T_Resources WHERE type_material = ?"
+        sql = f"SELECT title_material, {num_col} FROM T_Resources WHERE type_material = ? AND precure_season_name = ?"
         if not overwrite:
             sql += " AND (relative_path_of_file IS NULL OR relative_path_of_file = '')"
 
         query.prepare(sql)
         query.addBindValue(type_id)
+        query.addBindValue(season_name)
         if not query.exec(): return
 
         updates = []
