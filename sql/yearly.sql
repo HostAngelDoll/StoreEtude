@@ -9,9 +9,9 @@ CREATE TABLE IF NOT EXISTS T_Resources (
     released_spinoff_utc_09 TEXT,
     duration_file TEXT,
     datetime_download TEXT,
-    file_path TEXT,
-    soundtrack_path TEXT,
-    lyrics_path TEXT
+    relative_path_of_file TEXT,
+    relative_path_of_soundtracks TEXT,
+    relative_path_of_lyrics TEXT
 );
 
 CREATE TABLE IF NOT EXISTS T_Registry (
