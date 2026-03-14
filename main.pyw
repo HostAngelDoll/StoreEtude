@@ -1311,7 +1311,8 @@ class PrecureManagerApp(QMainWindow):
 
                 # 3. Movies & Specials
                 self.log(f"--- Iniciando Fase 3: Películas y Especiales ({year}) ---")
-                self.process_movies(db_year, master_path, type_ids, overwrite)
+                for s in seasons_info:
+                    self.process_movies(db_year, master_path, type_ids, s, overwrite)
 
                 # 4. Soundtracks & Lyrics
                 self.log(f"--- Iniciando Fase 4: Soundtracks y Letras ({year}) ---")
@@ -1373,39 +1374,47 @@ class PrecureManagerApp(QMainWindow):
             files = [f for f in os.listdir(target_folder) if self.is_valid_file(f, ('.mp4', '.mkv'))]
 
             if len(files) != ep_total and ep_total > 0:
-                self.log(f"Advertencia {season_name}: Se encontraron {len(files)} archivos, se esperaban {ep_total}.", is_error=True)
+                QMessageBox.warning(self, "Advertencia", f"Temporada {season_name}: Se encontraron {len(files)} archivos, se esperaban {ep_total}.")
 
-            if ep_type_id:
-                self.link_files_by_num(db, target_folder, files, ep_type_id, "ep_num", overwrite, season_name)
-            if ep_sp_type_id:
-                self.link_files_by_num(db, target_folder, files, ep_sp_type_id, "ep_sp_num", overwrite, season_name)
+            # Combine link phase to avoid "tripping"
+            self.link_season_files(db, target_folder, files, type_ids, overwrite, season_name)
         else:
             self.log(f"No se encontró carpeta para {keyword} en {season_name}.", is_error=True)
 
-    def link_files_by_num(self, db, folder_path, files, type_id, num_col, overwrite, season_name):
+    def link_season_files(self, db, folder_path, files, type_ids, overwrite, season_name):
+        ep_type_id = type_ids.get("Episodio")
+        ep_sp_type_id = type_ids.get("Ep Sp")
+
         query = QSqlQuery(db)
-        sql = f"SELECT title_material, {num_col} FROM T_Resources WHERE type_material = ? AND precure_season_name = ?"
+        sql = "SELECT title_material, ep_num, ep_sp_num, type_material FROM T_Resources WHERE precure_season_name = ? AND type_material IN (?, ?)"
         if not overwrite:
             sql += " AND (relative_path_of_file IS NULL OR relative_path_of_file = '')"
 
         query.prepare(sql)
-        query.addBindValue(type_id)
         query.addBindValue(season_name)
+        query.addBindValue(ep_type_id)
+        query.addBindValue(ep_sp_type_id)
         if not query.exec(): return
 
         updates = []
+        used_files = set()
+
         while query.next():
             title = query.value(0)
-            target_num = query.value(1)
+            ep_num = query.value(1)
+            ep_sp_num = query.value(2)
+            t_mat = query.value(3)
 
+            target_num = ep_num if t_mat == ep_type_id else ep_sp_num
             if target_num is None: continue
 
             for f in files:
+                if f in used_files: continue
                 clean = self.clean_name(f)
-                # Look for the number as a discrete part of the filename, allowing leading zeros
                 pattern = rf'(?<!\d)0*{target_num}(?!\d)'
                 if re.search(pattern, clean):
                     updates.append((f, title))
+                    used_files.add(f)
                     break
 
         # Get relative folder name (from master_path)
@@ -1430,13 +1439,12 @@ class PrecureManagerApp(QMainWindow):
             upd.addBindValue(title)
             upd.exec()
 
-    def process_movies(self, db, master_path, type_ids, overwrite):
+    def process_movies(self, db, master_path, type_ids, season_info, overwrite):
+        season_name = season_info['name']
         movie_types = ["Pelicula Temp", "All Stars", "Cortometraje", "Espetaculo"]
         movie_type_ids = [type_ids.get(t) for t in movie_types if type_ids.get(t)]
 
-        if not movie_type_ids:
-            self.log("No se encontraron IDs para tipos de películas.", is_error=True)
-            return
+        if not movie_type_ids: return
 
         # Find folders containing e_movie, All Stars, etc.
         movie_folders = []
@@ -1444,18 +1452,22 @@ class PrecureManagerApp(QMainWindow):
         for item in os.listdir(master_path):
             p = os.path.join(master_path, item)
             if os.path.isdir(p):
+                # We expect the folder name to potentially contain season info too?
+                # Or just alphabetical within the year?
+                # User said: alphabetical order since they are in same order as in Resources.
+                # To be safe, we only process folders that match some season keyword or just alphabetical for all movies in year?
+                # "en orden alfabético se ordenaran las carpetas ya que estan en el mismo orden que en Resources"
+                # If we do it PER SEASON, it's safer.
                 if any(kw in item.lower() for kw in keywords):
                     movie_folders.append(item)
 
         movie_folders.sort() # Alphabetical order
 
-        if not movie_folders:
-            self.log("No se encontraron carpetas de películas/especiales.")
-            return
+        if not movie_folders: return
 
         # Get records from DB ordered by released_utc_09
         query = QSqlQuery(db)
-        sql = f"SELECT title_material FROM T_Resources WHERE type_material IN ({','.join(['?']*len(movie_type_ids))})"
+        sql = f"SELECT title_material FROM T_Resources WHERE type_material IN ({','.join(['?']*len(movie_type_ids))}) AND precure_season_name = ?"
         if not overwrite:
             sql += " AND (relative_path_of_file IS NULL OR relative_path_of_file = '')"
         sql += " ORDER BY released_utc_09 ASC"
@@ -1463,6 +1475,7 @@ class PrecureManagerApp(QMainWindow):
         query.prepare(sql)
         for tid in movie_type_ids:
             query.addBindValue(tid)
+        query.addBindValue(season_name)
 
         if not query.exec(): return
 
@@ -1470,8 +1483,10 @@ class PrecureManagerApp(QMainWindow):
         while query.next():
             records.append(query.value(0))
 
+        if not records: return
+
         # Link records to folders
-        self.log(f"Vinculando {len(movie_folders)} carpetas de películas/especiales...")
+        self.log(f"Vinculando {len(records)} películas/especiales para {season_name}...")
         for i in range(min(len(records), len(movie_folders))):
             QApplication.processEvents()
             title = records[i]
