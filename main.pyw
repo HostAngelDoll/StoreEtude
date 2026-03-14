@@ -208,6 +208,7 @@ class PrecureManagerApp(QMainWindow):
 
         years = list(range(2004, datetime.now().year + 1))
         progress = QProgressDialog("Migrando recursos...", "Cancelar", 0, len(years), self)
+        progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.show()
 
@@ -412,6 +413,7 @@ class PrecureManagerApp(QMainWindow):
         while q.next(): type_ids[q.value(1)] = q.value(0)
 
         progress = QProgressDialog("Escaneando y vinculando recursos...", "Cancelar", 0, len(years), self)
+        progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal); progress.show()
 
         for i, year in enumerate(years):
@@ -476,7 +478,16 @@ class PrecureManagerApp(QMainWindow):
         if target_folder:
             self.log(f"Temporada: {season_name} -> Carpeta: {os.path.basename(target_folder)}")
             files = [f for f in os.listdir(target_folder) if self.is_valid_file(f, ('.mp4', '.mkv'))]
-            if len(files) != ep_total and ep_total > 0:
+
+            now = datetime.now()
+            is_active_season = False
+            try:
+                db_year = int(re.search(r'\d+', os.path.dirname(os.path.dirname(master_path))).group())
+                if (now.year == db_year and now.month >= 2) or (now.year == db_year + 1 and now.month == 1):
+                    is_active_season = True
+            except: pass
+
+            if len(files) != ep_total and ep_total > 0 and not is_active_season:
                 QMessageBox.warning(self, "Advertencia", f"Temporada {season_name}: Se encontraron {len(files)} archivos, se esperaban {ep_total}.")
             self.link_season_files(db, target_folder, files, type_ids, overwrite, season_name)
         else: self.log(f"No se encontró carpeta para {keyword} en {season_name}.", is_error=True)

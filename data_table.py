@@ -5,14 +5,16 @@ import sqlite3
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableView,
                              QHeaderView, QPushButton, QLabel, QPlainTextEdit,
                              QSplitter, QMessageBox, QFileDialog, QInputDialog,
-                             QApplication, QAbstractItemView, QMenu, QProgressDialog)
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor
+                             QApplication, QAbstractItemView, QMenu, QProgressDialog,
+                             QStyle, QStyleOptionButton)
+from PyQt6.QtCore import Qt, QRect, QPoint
+from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor, QPainter
 from datetime import datetime
 from PyQt6.QtSql import (QSqlTableModel, QSqlRelationalTableModel, QSqlRelation,
                          QSqlRelationalDelegate, QSqlQuery, QSqlDatabase)
 
 from forms import DatabaseForm
+from filter_widget import FilterMenu
 
 class ColumnHeaderView(QHeaderView):
     def __init__(self, orientation, parent=None):
@@ -20,6 +22,30 @@ class ColumnHeaderView(QHeaderView):
         self.setSectionsClickable(True)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
+        self.filter_rects = {}
+
+    def paintSection(self, painter, rect, logicalIndex):
+        painter.save()
+        super().paintSection(painter, rect, logicalIndex)
+        painter.restore()
+
+        # Draw filter button
+        option = QStyleOptionButton()
+        btn_size = 16
+        option.rect = QRect(rect.right() - btn_size - 2, rect.center().y() - btn_size//2, btn_size, btn_size)
+        option.state = QStyle.StateFlag.State_Enabled
+        option.text = "▼"
+        self.filter_rects[logicalIndex] = option.rect
+        self.style().drawItemText(painter, option.rect, Qt.AlignmentFlag.AlignCenter, self.palette(), True, option.text)
+
+    def mousePressEvent(self, event):
+        logical_index = self.logicalIndexAt(event.pos())
+        if logical_index in self.filter_rects and self.filter_rects[logical_index].contains(event.pos()):
+            # Filter button clicked
+            table_tab = self.parent().parent().parent()
+            table_tab.show_filter_menu(logical_index, self.mapToGlobal(event.pos()))
+            return
+        super().mousePressEvent(event)
 
     def show_context_menu(self, pos):
         logical_index = self.logicalIndexAt(pos)
@@ -146,6 +172,54 @@ class DataTableTab(QWidget):
 
         self.layout.addWidget(self.main_splitter)
         self.layout.addLayout(self.btn_layout)
+
+        self.active_filters = {} # col_index -> list of values
+        self.current_sort = (None, None) # (col_index, order)
+
+    def show_filter_menu(self, col_index, pos):
+        # Get unique values for the column
+        values = []
+        for r in range(self.model.rowCount()):
+            val = self.model.data(self.model.index(r, col_index))
+            values.append(val)
+
+        self.filter_menu = FilterMenu(values, self)
+        self.filter_menu.filter_requested.connect(lambda selected: self.apply_filter(col_index, selected))
+        self.filter_menu.sort_requested.connect(lambda order: self.apply_sort(col_index, order))
+        self.filter_menu.show_at(pos)
+
+    def apply_filter(self, col_index, selected_values):
+        self.active_filters[col_index] = selected_values
+
+        filter_parts = []
+        for col, values in self.active_filters.items():
+            field_name = self.model.record().fieldName(col)
+            # Escape single quotes and handle NULLs
+            escaped_vals = []
+            has_null = False
+            for v in values:
+                if v is None:
+                    has_null = True
+                else:
+                    escaped_vals.append(f"'{str(v).replace('\'', '\'\'')}'")
+
+            if not escaped_vals and not has_null:
+                filter_parts.append("1=0") # No values selected
+            else:
+                conditions = []
+                if escaped_vals:
+                    conditions.append(f'"{field_name}" IN ({", ".join(escaped_vals)})')
+                if has_null:
+                    conditions.append(f'"{field_name}" IS NULL OR "{field_name}" = ""')
+                filter_parts.append(f"({' OR '.join(conditions)})")
+
+        filter_str = " AND ".join(filter_parts)
+        self.model.setFilter(filter_str)
+        self.model.select()
+
+    def apply_sort(self, col_index, order):
+        self.model.sort(col_index, order)
+        self.model.select()
 
     def export_to_csv(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "Exportar tabla a CSV", f"{self.table_name}.csv", "CSV Files (*.csv)")
