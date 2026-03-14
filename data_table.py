@@ -203,13 +203,19 @@ class DataTableTab(QWidget):
         self.current_sort = (None, None) # (col_index, order)
 
     def show_filter_menu(self, col_index, pos):
-        # Get unique values for the column
-        values = []
-        for r in range(self.model.rowCount()):
-            val = self.model.data(self.model.index(r, col_index))
-            values.append(val)
+        # Get all unique values for the column directly from DB to ignore active filters
+        field_name = self.model.record().fieldName(col_index)
+        db = self.model.database()
+        query = QSqlQuery(db)
+        query.exec(f'SELECT DISTINCT "{field_name}" FROM "{self.table_name}"')
 
-        self.filter_menu = FilterMenu(values, self)
+        all_values = []
+        while query.next():
+            all_values.append(query.value(0))
+
+        current_selection = self.active_filters.get(col_index)
+
+        self.filter_menu = FilterMenu(all_values, current_selection, self)
         self.filter_menu.filter_requested.connect(lambda selected: self.apply_filter(col_index, selected))
         self.filter_menu.sort_requested.connect(lambda order: self.apply_sort(col_index, order))
         self.filter_menu.show_at(pos)

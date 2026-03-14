@@ -7,7 +7,7 @@ class FilterMenu(QFrame):
     filter_requested = pyqtSignal(list) # List of selected values
     sort_requested = pyqtSignal(Qt.SortOrder)
 
-    def __init__(self, values, parent=None):
+    def __init__(self, values, selected_values=None, parent=None):
         super().__init__(parent, Qt.WindowType.Popup)
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
@@ -82,7 +82,7 @@ class FilterMenu(QFrame):
 
         self.items = []
         self.values = values
-        self.populate_list(values)
+        self.populate_list(values, selected_values)
 
         # Footer buttons
         btn_layout = QHBoxLayout()
@@ -107,13 +107,17 @@ class FilterMenu(QFrame):
         self.all_checkbox.setDisabled(disabled)
         self.btn_ok.setDisabled(disabled)
 
-    def populate_list(self, values):
+    def populate_list(self, values, selected_values=None):
         self.list_widget.clear()
         self.items = []
-        for val in sorted(list(set(values))):
+        unique_vals = sorted(list(set(values)), key=lambda x: (x is not None, str(x)))
+        for val in unique_vals:
             item = QListWidgetItem(self.list_widget)
             cb = QCheckBox(str(val) if val is not None else "(Vacío)")
-            cb.setChecked(True)
+            if selected_values is None:
+                cb.setChecked(True)
+            else:
+                cb.setChecked(val in selected_values)
             self.list_widget.setItemWidget(item, cb)
             self.items.append((val, cb))
 
