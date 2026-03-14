@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
                              QLineEdit, QListWidget, QListWidgetItem, QCheckBox,
                              QFrame, QLabel)
 from PyQt6.QtCore import Qt, pyqtSignal, QEvent
@@ -11,7 +11,7 @@ class FilterMenu(QFrame):
         super().__init__(parent, Qt.WindowType.Popup)
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
-
+        
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(5, 5, 5, 5)
         self.setStyleSheet("""
@@ -55,10 +55,10 @@ class FilterMenu(QFrame):
         self.btn_sort_asc.clicked.connect(lambda: self.on_sort(Qt.SortOrder.AscendingOrder))
         self.btn_sort_desc = QPushButton("↓ Ordenar de Z a A")
         self.btn_sort_desc.clicked.connect(lambda: self.on_sort(Qt.SortOrder.DescendingOrder))
-
+        
         self.layout.addWidget(self.btn_sort_asc)
         self.layout.addWidget(self.btn_sort_desc)
-
+        
         line = QFrame()
         line.setFrameShape(QFrame.Shape.HLine)
         line.setFrameShadow(QFrame.Shadow.Sunken)
@@ -74,7 +74,7 @@ class FilterMenu(QFrame):
         self.list_widget = QListWidget()
         self.list_widget.setMaximumHeight(200)
         self.layout.addWidget(self.list_widget)
-
+        
         self.all_checkbox = QCheckBox("(Seleccionar todo)")
         self.all_checkbox.setChecked(True)
         self.all_checkbox.stateChanged.connect(self.toggle_all)

@@ -2,7 +2,7 @@ import os
 import re
 import csv
 import sqlite3
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableView,
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableView, 
                              QHeaderView, QPushButton, QLabel, QPlainTextEdit,
                              QSplitter, QMessageBox, QFileDialog, QInputDialog,
                              QApplication, QAbstractItemView, QMenu, QProgressDialog,
@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableView,
 from PyQt6.QtCore import Qt, QRect, QPoint
 from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor, QPainter, QPalette
 from datetime import datetime
-from PyQt6.QtSql import (QSqlTableModel, QSqlRelationalTableModel, QSqlRelation,
+from PyQt6.QtSql import (QSqlTableModel, QSqlRelationalTableModel, QSqlRelation, 
                          QSqlRelationalDelegate, QSqlQuery, QSqlDatabase)
 
 from forms import DatabaseForm
@@ -31,25 +31,25 @@ class ColumnHeaderView(QHeaderView):
 
     def paintSection(self, painter, rect, logicalIndex):
         painter.save()
-
+        
         # Draw background only
         opt = QStyleOptionHeader()
         opt.rect = rect
         opt.section = logicalIndex
         opt.state = QStyle.StateFlag.State_Enabled
         self.style().drawControl(QStyle.ControlElement.CE_HeaderSection, opt, painter, self)
-
+        
         # Draw text in restricted area
         text = self.model().headerData(logicalIndex, self.orientation(), Qt.ItemDataRole.DisplayRole)
         margin = 4
         btn_size = 14
         text_rect = QRect(rect.left() + margin, rect.top(), rect.width() - btn_size - margin * 3, rect.height())
         self.style().drawItemText(painter, text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.palette(), True, str(text))
-
+        
         # Draw filter button
         btn_rect = QRect(rect.right() - btn_size - margin, rect.center().y() - btn_size//2, btn_size, btn_size)
         self.filter_rects[logicalIndex] = btn_rect
-
+        
         # Determine button colors based on light/dark mode (heuristic)
         is_dark = self.palette().window().color().lightness() < 128
         bg_color = QColor(255, 255, 255, 60) if is_dark else QColor(0, 0, 0, 40)
@@ -58,10 +58,10 @@ class ColumnHeaderView(QHeaderView):
         painter.setBrush(bg_color)
         painter.setPen(Qt.GlobalColor.transparent)
         painter.drawRoundedRect(btn_rect, 2, 2)
-
+        
         painter.setPen(text_color)
         painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, "▼")
-
+        
         painter.restore()
 
     def mousePressEvent(self, event):
@@ -77,7 +77,7 @@ class ColumnHeaderView(QHeaderView):
         logical_index = self.logicalIndexAt(pos)
         if logical_index < 0:
             return
-
+        
         menu = QMenu(self)
         add_left = menu.addAction("Agregar columna (izquierda)")
         add_right = menu.addAction("Agregar columna (derecha)")
@@ -86,13 +86,13 @@ class ColumnHeaderView(QHeaderView):
         menu.addSeparator()
         copy_col_name = menu.addAction("Copiar nombre de esta columna")
         copy_col_data = menu.addAction("Copiar datos de esta columna")
-
+        
         action = menu.exec(self.mapToGlobal(pos))
         if not action:
             return
-
+        
         # Hierarchy: ColumnHeaderView -> QTableView -> QSplitter -> DataTableTab
-        table_tab = self.parent().parent().parent()
+        table_tab = self.parent().parent().parent() 
         if action == add_left:
             table_tab.add_column(logical_index)
         elif action == add_right:
@@ -112,7 +112,7 @@ class DataTableTab(QWidget):
         self.db_conn_name = db_conn_name
         self.table_name = table_name
         self.layout = QVBoxLayout(self)
-
+        
         db = QSqlDatabase.database(db_conn_name)
         if table_name == "T_Resources" and db_conn_name == "year_db":
             self.model = QSqlRelationalTableModel(self, db)
@@ -122,10 +122,10 @@ class DataTableTab(QWidget):
         else:
             self.model = QSqlTableModel(self, db)
             self.model.setTable(table_name)
-
+            
         self.model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
         self.model.select()
-
+        
         self.view = QTableView()
         self.view.setModel(self.model)
         if isinstance(self.model, QSqlRelationalTableModel):
@@ -133,38 +133,38 @@ class DataTableTab(QWidget):
         self.view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
-
+        
         # Custom Header
         header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
         self.view.setHorizontalHeader(header)
         header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-
+        
         # CRUD Buttons
         self.btn_layout = QHBoxLayout()
         self.btn_add = QPushButton("Añadir")
         self.btn_edit = QPushButton("Editar")
         self.btn_delete = QPushButton("Borrar")
-
+        
         self.btn_add.clicked.connect(self.add_record)
         self.btn_edit.clicked.connect(self.edit_record)
         self.btn_delete.clicked.connect(self.delete_record)
-
+        
         self.btn_layout.addWidget(self.btn_add)
         self.btn_layout.addWidget(self.btn_edit)
         self.btn_layout.addWidget(self.btn_delete)
-
+        
         # Main Splitter for Table and Console
         self.main_splitter = QSplitter(Qt.Orientation.Vertical)
         self.main_splitter.addWidget(self.view)
-
+        
         # SQL Console Area
         self.console_area = QWidget()
         self.console_layout = QVBoxLayout(self.console_area)
         self.console_layout.setContentsMargins(0, 5, 0, 0)
-
+        
         # Splitter for SQL Command and Log
         self.sql_splitter = QSplitter(Qt.Orientation.Horizontal)
-
+        
         # Left side: Command
         self.cmd_container = QWidget()
         cmd_layout = QVBoxLayout(self.cmd_container)
@@ -172,7 +172,7 @@ class DataTableTab(QWidget):
         cmd_layout.addWidget(QLabel("SQL Commands:"))
         self.sql_console = QPlainTextEdit()
         cmd_layout.addWidget(self.sql_console)
-
+        
         # Right side: Log
         self.log_container = QWidget()
         log_layout = QVBoxLayout(self.log_container)
@@ -182,45 +182,45 @@ class DataTableTab(QWidget):
         self.log_viewer.setReadOnly(True)
         self.log_viewer.setStyleSheet("background-color: black; color: white; font-family: Consolas, monospace;")
         log_layout.addWidget(self.log_viewer)
-
+        
         self.sql_splitter.addWidget(self.cmd_container)
         self.sql_splitter.addWidget(self.log_container)
-
+        
         self.btn_run_sql = QPushButton("Ejecutar SQL")
         self.btn_run_sql.clicked.connect(self.run_sql_script)
-
+        
         self.console_layout.addWidget(self.sql_splitter)
         self.console_layout.addWidget(self.btn_run_sql)
-
+        
         self.main_splitter.addWidget(self.console_area)
         self.main_splitter.setStretchFactor(0, 3)
         self.main_splitter.setStretchFactor(1, 1)
-
+        
         self.layout.addWidget(self.main_splitter)
         self.layout.addLayout(self.btn_layout)
-
+        
         self.active_filters = {} # col_index -> list of values
         self.current_sort = (None, None) # (col_index, order)
 
     def show_filter_menu(self, col_index, pos):
         is_relational = isinstance(self.model, QSqlRelationalTableModel)
         relation = self.model.relation(col_index) if is_relational else QSqlRelation()
-
+        
         all_values = []
         db = self.model.database()
         query = QSqlQuery(db)
-
+        
         # Get the underlying field name from the DB schema to avoid model aliases/display names
         actual_field_name = db.record(self.table_name).fieldName(col_index)
-
+        
         success = False
         if relation.isValid() and actual_field_name:
             rel_table = relation.tableName()
             rel_index = relation.indexColumn()
             rel_display = relation.displayColumn()
-
+            
             sql = f"""
-                SELECT DISTINCT r."{rel_display}"
+                SELECT DISTINCT r."{rel_display}" 
                 FROM "{self.table_name}" t
                 LEFT JOIN "{rel_table}" r ON t."{actual_field_name}" = r."{rel_index}"
             """
@@ -234,16 +234,16 @@ class DataTableTab(QWidget):
                 while query.next():
                     all_values.append(query.value(0))
                 success = True
-
+        
         # Fallback to model data if query failed or returned no values
         if not success or not all_values:
             unique_vals = set()
             for r in range(self.model.rowCount()):
                 unique_vals.add(self.model.data(self.model.index(r, col_index)))
             all_values = list(unique_vals)
-
+            
         current_selection = self.active_filters.get(col_index)
-
+        
         self.filter_menu = FilterMenu(all_values, current_selection, self)
         self.filter_menu.filter_requested.connect(lambda selected: self.apply_filter(col_index, selected))
         self.filter_menu.sort_requested.connect(lambda order: self.apply_sort(col_index, order))
@@ -251,7 +251,7 @@ class DataTableTab(QWidget):
 
     def apply_filter(self, col_index, selected_values):
         self.active_filters[col_index] = selected_values
-
+        
         filter_parts = []
         for col, values in self.active_filters.items():
             field_name = self.model.record().fieldName(col)
@@ -259,11 +259,11 @@ class DataTableTab(QWidget):
             escaped_vals = []
             has_null = False
             for v in values:
-                if v is None:
+                if v is None: 
                     has_null = True
                 else:
                     escaped_vals.append(f"'{str(v).replace('\'', '\'\'')}'")
-
+            
             if not escaped_vals and not has_null:
                 filter_parts.append("1=0") # No values selected
             else:
@@ -273,7 +273,7 @@ class DataTableTab(QWidget):
                 if has_null:
                     conditions.append(f'"{field_name}" IS NULL OR "{field_name}" = ""')
                 filter_parts.append(f"({' OR '.join(conditions)})")
-
+        
         filter_str = " AND ".join(filter_parts)
         self.model.setFilter(filter_str)
         self.model.select()
@@ -286,24 +286,24 @@ class DataTableTab(QWidget):
         file_path, _ = QFileDialog.getSaveFileName(self, "Exportar tabla a CSV", f"{self.table_name}.csv", "CSV Files (*.csv)")
         if not file_path:
             return
-
+        
         try:
             with open(file_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-
+                
                 # Headers
                 headers = []
                 for i in range(self.model.columnCount()):
                     headers.append(self.model.headerData(i, Qt.Orientation.Horizontal))
                 writer.writerow(headers)
-
+                
                 # Data
                 for r in range(self.model.rowCount()):
                     row_data = []
                     for c in range(self.model.columnCount()):
                         row_data.append(self.model.data(self.model.index(r, c)))
                     writer.writerow(row_data)
-
+                    
             QMessageBox.information(self, "Exportación", "Tabla exportada con éxito.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo exportar: {e}")
@@ -315,43 +315,43 @@ class DataTableTab(QWidget):
                "¿Deseas continuar?")
         if QMessageBox.warning(self, "Importar CSV", msg, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
             return
-
+            
         file_path, _ = QFileDialog.getOpenFileName(self, "Importar tabla desde CSV", "", "CSV Files (*.csv)")
         if not file_path:
             return
-
+            
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 reader = csv.reader(f)
                 headers = next(reader)
-
+                
                 # Validate headers
                 model_headers = [self.model.headerData(i, Qt.Orientation.Horizontal) for i in range(self.model.columnCount())]
                 if headers != model_headers:
                     QMessageBox.critical(self, "Error", f"Las columnas no coinciden.\nCSV: {headers}\nTabla: {model_headers}")
                     return
-
+                
                 # Clear table efficiently
                 db = QSqlDatabase.database(self.db_conn_name)
                 query = QSqlQuery(db)
                 if not query.exec(f"DELETE FROM {self.table_name}"):
                     QMessageBox.critical(self, "Error", f"No se pudo limpiar la tabla: {query.lastError().text()}")
                     return
-
+                
                 # Insert data
                 for row_data in reader:
                     record = self.model.record()
                     for i, val in enumerate(row_data):
                         record.setValue(i, val)
                     self.model.insertRecord(-1, record)
-
+                
                 if self.model.submitAll():
                     self.model.select()
                     QMessageBox.information(self, "Importación", "Datos importados con éxito.")
                 else:
                     QMessageBox.critical(self, "Error", f"Error al guardar los datos: {self.model.lastError().text()}")
                     self.model.select()
-
+                    
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo importar: {e}")
 
@@ -360,7 +360,7 @@ class DataTableTab(QWidget):
         for r in range(self.model.rowCount()):
             val = self.model.data(self.model.index(r, index))
             data_list.append(str(val) if val is not None else "")
-
+        
         clipboard = QApplication.clipboard()
         clipboard.setText("\n".join(data_list))
         self.log(f"Datos de columna '{self.model.headerData(index, Qt.Orientation.Horizontal)}' copiados al portapapeles.")
@@ -380,7 +380,7 @@ class DataTableTab(QWidget):
         else:
             fmt.setForeground(QColor("white"))
             prefix = "[INFO] "
-
+        
         self.log_viewer.setCurrentCharFormat(fmt)
         self.log_viewer.insertPlainText(f"{prefix}{message}\n")
         self.log_viewer.moveCursor(QTextCursor.MoveOperation.End)
@@ -411,26 +411,26 @@ class DataTableTab(QWidget):
         full_script = self.sql_console.toPlainText().strip()
         if not full_script:
             return
-
+        
         db = QSqlDatabase.database(self.db_conn_name)
         # Split by semicolon but ignore inside quotes
         statements = re.split(r';(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)', full_script)
-
+        
         success_count = 0
         error_occurred = False
-
+        
         for statement in statements:
             stmt = statement.strip()
             if not stmt or stmt.upper() == "COMMIT":
                 continue
-
+            
             query = QSqlQuery(db)
             if query.exec(stmt):
                 success_count += 1
                 # Detect CREATE TABLE or DROP TABLE
                 create_match = re.search(r"CREATE\s+TABLE\s+(\w+)", stmt, re.IGNORECASE)
                 drop_match = re.search(r"DROP\s+TABLE\s+(\w+)", stmt, re.IGNORECASE)
-
+                
                 if create_match:
                     new_table = create_match.group(1)
                     self.table_name = new_table
@@ -446,7 +446,7 @@ class DataTableTab(QWidget):
                 self.log(f"Error en sentencia: {stmt[:30]}... -> {err_msg}", is_error=True)
                 error_occurred = True
                 break
-
+        
         if success_count > 0:
             self.log(f"Ejecutadas con éxito {success_count} sentencias.")
             self.model.select()
@@ -457,23 +457,23 @@ class DataTableTab(QWidget):
         col_name, ok = QInputDialog.getText(self, "Nueva Columna", "Nombre de la columna:")
         if not ok or not col_name:
             return
-
+        
         self.model.submitAll()
         self.update_sql_file_add_column(col_name)
-
+        
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         sql = f'ALTER TABLE "{self.table_name}" ADD COLUMN "{col_name}" TEXT'
-
+        
         current_cols_count = self.model.record().count()
         if query.exec(sql):
             self.log(f"Columna '{col_name}' añadida en base de datos actual.")
             if self.db_conn_name == "year_db":
                 self.propagate_schema_change(sql, f"Columna '{col_name}' añadida")
-
+            
             self.model.select()
             if position < current_cols_count:
-                QMessageBox.information(self, "Columna Añadida",
+                QMessageBox.information(self, "Columna Añadida", 
                     "Nota: SQLite solo permite añadir columnas al final.")
         else:
             self.log(f"Error añadiendo columna: {query.lastError().text()}", is_error=True)
@@ -483,20 +483,20 @@ class DataTableTab(QWidget):
         new_name, ok = QInputDialog.getText(self, "Renombrar Columna", f"Nuevo nombre para '{old_name}':", text=old_name)
         if not ok or not new_name or new_name == old_name:
             return
-
+        
         self.model.submitAll()
         self.update_sql_file_rename_column(old_name, new_name)
-
+        
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         sql = f'ALTER TABLE "{self.table_name}" RENAME COLUMN "{old_name}" TO "{new_name}"'
-
+        
         if query.exec(sql):
             self.log(f"Columna '{old_name}' renombrada a '{new_name}' en base de datos actual.")
             if self.db_conn_name == "year_db":
                 # For rename, we need custom logic to check existence, but we can pass the SQL
                 self.propagate_schema_change(sql, f"Columna renombrada a '{new_name}'")
-
+                
             self.model.setTable(self.table_name)
             self.model.select()
         else:
@@ -506,12 +506,12 @@ class DataTableTab(QWidget):
         col_name = self.model.record().fieldName(index)
         if QMessageBox.question(self, "Confirmar", f"¿Seguro que quieres eliminar la columna '{col_name}'?") != QMessageBox.StandardButton.Yes:
             return
-
+        
         self.model.submitAll()
-
+        
         # Mandatory Backup Logic if column has data
         from db_manager import get_yearly_db_path
-
+        
         has_data = False
         db_paths_to_check = []
         if self.db_conn_name == "year_db":
@@ -527,49 +527,49 @@ class DataTableTab(QWidget):
             if self.column_has_data(p, self.table_name, col_name):
                 has_data = True
                 break
-
+        
         if has_data:
-            ret = QMessageBox.warning(self, "Columna con Datos",
+            ret = QMessageBox.warning(self, "Columna con Datos", 
                 f"La columna '{col_name}' contiene datos. Se realizará una exportación a CSV de seguridad antes de borrar.\n¿Deseas continuar?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if ret == QMessageBox.StandardButton.No:
                 return
-
+            
             # Perform export
             backup_dir = "backups"
             if not os.path.exists(backup_dir):
                 os.makedirs(backup_dir)
-
+            
             progress = QProgressDialog("Exportando backups...", "Cancelar", 0, len(db_paths_to_check), self)
             progress.setWindowModality(Qt.WindowModality.WindowModal)
             progress.show()
-
+            
             for i, (year, p) in enumerate(db_paths_to_check):
                 progress.setValue(i)
                 label = f"Backup año {year}..." if year else "Backup base de datos..."
                 progress.setLabelText(label)
                 QApplication.processEvents()
                 if progress.wasCanceled(): break
-
+                
                 suffix = f"_{year}" if year else ""
                 csv_path = os.path.join(backup_dir, f"{self.table_name}{suffix}_pre_delete_{col_name}.csv")
                 self.export_table_to_csv_static(p, self.table_name, csv_path)
-
+            
             progress.setValue(len(db_paths_to_check))
             QMessageBox.information(self, "Backup Completado", f"Se han guardado copias de seguridad en la carpeta '{backup_dir}'.")
 
         # Proceed with deletion
         self.update_sql_file_drop_column(col_name)
-
+        
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         sql = f'ALTER TABLE "{self.table_name}" DROP COLUMN "{col_name}"'
-
+        
         if query.exec(sql):
             self.log(f"Columna '{col_name}' eliminada en base de datos actual.")
             if self.db_conn_name == "year_db":
                 self.propagate_schema_change(sql, f"Columna '{col_name}' eliminada")
-
+                
             self.model.setTable(self.table_name)
             self.model.select()
         else:
@@ -583,7 +583,7 @@ class DataTableTab(QWidget):
             if col_name not in cols:
                 conn.close()
                 return False
-
+                
             cursor = conn.execute(f'SELECT 1 FROM "{table_name}" WHERE "{col_name}" IS NOT NULL AND "{col_name}" != "" LIMIT 1')
             row = cursor.fetchone()
             conn.close()
@@ -596,7 +596,7 @@ class DataTableTab(QWidget):
             conn = sqlite3.connect(db_path)
             cursor = conn.execute(f'SELECT * FROM "{table_name}"')
             columns = [description[0] for description in cursor.description]
-
+            
             with open(csv_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow(columns)
@@ -607,31 +607,31 @@ class DataTableTab(QWidget):
 
     def propagate_schema_change(self, sql_command, success_msg_prefix):
         from db_manager import init_yearly_dbs, get_yearly_db_path
-
+        
         # Ensure all databases exist
         init_yearly_dbs()
-
+        
         current_db_path = os.path.abspath(QSqlDatabase.database(self.db_conn_name).databaseName())
         years = list(range(2004, datetime.now().year + 1))
-
+        
         progress = QProgressDialog("Propagando cambios de esquema...", "Cancelar", 0, len(years), self)
         progress.setWindowModality(Qt.WindowModality.WindowModal)
         progress.setMinimumDuration(0)
         progress.show()
-
+        
         for i, year in enumerate(years):
             progress.setValue(i)
             progress.setLabelText(f"Procesando año {year}...")
             QApplication.processEvents()
-
+            
             if progress.wasCanceled():
                 self.log("Propagación cancelada por el usuario.", is_error=True)
                 break
-
+                
             db_path = os.path.abspath(get_yearly_db_path(year))
             if db_path == current_db_path:
                 continue
-
+                
             if os.path.exists(db_path):
                 try:
                     conn = sqlite3.connect(db_path)
@@ -651,20 +651,20 @@ class DataTableTab(QWidget):
                                 if old_col not in cols or new_col in cols:
                                     conn.close()
                                     continue
-
+                        
                         conn.execute(sql_command)
                         conn.commit()
                         self.log(f"{success_msg_prefix} en base de datos del año {year}.")
                     conn.close()
                 except Exception as e:
                     self.log(f"Error en año {year}: {e}", is_error=True)
-
+        
         progress.setValue(len(years))
 
     def update_database(self, db_conn_name):
         self.db_conn_name = db_conn_name
         db = QSqlDatabase.database(db_conn_name)
-
+        
         if self.table_name == "T_Resources" and db_conn_name == "year_db":
             self.model = QSqlRelationalTableModel(self, db)
             self.model.setTable(self.table_name)
@@ -673,7 +673,7 @@ class DataTableTab(QWidget):
         else:
             self.model = QSqlTableModel(self, db)
             self.model.setTable(self.table_name)
-
+            
         self.model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
         self.model.select()
         self.view.setModel(self.model)
@@ -694,12 +694,12 @@ class DataTableTab(QWidget):
         if not os.path.exists(path): return
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
-
+        
         # Simple regex to find the CREATE TABLE block and add the column before );
         pattern = rf'(CREATE TABLE {self.table_name}\s*\([^;]*)\);'
         replacement = r'\1,    ' + col_name + ' TEXT\n);'
         new_content = re.sub(pattern, replacement, content, flags=re.IGNORECASE | re.DOTALL)
-
+        
         with open(path, "w", encoding="utf-8") as f:
             f.write(new_content)
 
@@ -708,10 +708,10 @@ class DataTableTab(QWidget):
         if not os.path.exists(path): return
         with open(path, "r", encoding="utf-8") as f:
             content = f.read()
-
+        
         # Regex to find the table block and then replace the column name within it
         table_pattern = rf'(CREATE TABLE {self.table_name}\s*\()(.*?)(\);)'
-
+        
         def replace_col(match):
             prefix = match.group(1)
             body = match.group(2)
@@ -721,7 +721,7 @@ class DataTableTab(QWidget):
             return prefix + new_body + suffix
 
         new_content = re.sub(table_pattern, replace_col, content, flags=re.IGNORECASE | re.DOTALL)
-
+        
         with open(path, "w", encoding="utf-8") as f:
             f.write(new_content)
 
@@ -732,7 +732,7 @@ class DataTableTab(QWidget):
             content = f.read()
 
         table_pattern = rf'(CREATE TABLE {self.table_name}\s*\()(.*?)(\);)'
-
+        
         def replace_col(match):
             prefix = match.group(1)
             body = match.group(2)
@@ -743,16 +743,16 @@ class DataTableTab(QWidget):
             for line in lines:
                 if not re.search(rf'\b"{col_name}"\b|\b{col_name}\b', line):
                     new_lines.append(line)
-
+            
             # Re-clean commas
             body_text = '\n'.join(new_lines)
             body_text = re.sub(r',\s*\n\s*\)', '\n)', body_text) # remove comma before closing paren
             body_text = re.sub(r'\(\s*,', '(', body_text) # remove comma after opening paren
-
+            
             return prefix + body_text + suffix
 
         new_content = re.sub(table_pattern, replace_col, content, flags=re.IGNORECASE | re.DOTALL)
-
+        
         with open(path, "w", encoding="utf-8") as f:
             f.write(new_content)
 

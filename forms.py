@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import (QDialog, QFormLayout, QLineEdit, QSpinBox,
+from PyQt6.QtWidgets import (QDialog, QFormLayout, QLineEdit, QSpinBox, 
                              QCheckBox, QDialogButtonBox, QMessageBox, QComboBox,
                              QVBoxLayout, QHBoxLayout, QRadioButton, QButtonGroup,
                              QLabel, QWidget)
@@ -14,22 +14,22 @@ class DatabaseForm(QDialog):
         self.record = model.record(row) if row >= 0 else model.record()
         self.setWindowTitle("Añadir Registro" if row < 0 else "Editar Registro")
         self.setMinimumWidth(400)
-
+        
         self.layout = QFormLayout(self)
         self.widgets = {}
-
+        
         is_relational = isinstance(model, QSqlRelationalTableModel)
-
+        
         for i in range(self.record.count()):
             field_name = self.record.fieldName(i)
             if field_name.lower() == "idx" and row < 0:
                 continue
-
+            
             label = field_name.replace("_", " ").title()
-
+            
             # Check if this field has a relation
             relation = model.relation(i) if is_relational else QSqlRelation()
-
+            
             if relation.isValid():
                 widget = QComboBox()
                 rel_model = model.relationModel(i)
@@ -37,7 +37,7 @@ class DatabaseForm(QDialog):
                 rel_model.select()
                 widget.setModel(rel_model)
                 widget.setModelColumn(rel_model.fieldIndex(relation.displayColumn()))
-
+                
                 if row >= 0:
                     # Find the index of the current value in the relational model
                     current_val = self.record.value(i)
@@ -58,7 +58,7 @@ class DatabaseForm(QDialog):
                 widget = QLineEdit()
                 if row >= 0:
                     widget.setText(str(self.record.value(i) or ""))
-
+            
             self.layout.addRow(label, widget)
             self.widgets[field_name] = widget
 
@@ -85,7 +85,7 @@ class DatabaseForm(QDialog):
                     self.record.setValue(i, key_val)
                 else:
                     self.record.setValue(i, widget.text())
-
+        
         if self.row >= 0:
             if self.model.setRecord(self.row, self.record):
                 if self.model.submitAll():
@@ -102,7 +102,7 @@ class DatabaseForm(QDialog):
                     QMessageBox.critical(self, "Error", f"No se pudo guardar en la base de datos: {self.model.lastError().text()}")
             else:
                 QMessageBox.critical(self, "Error", "No se pudo añadir el registro al modelo.")
-
+        
         self.model.select()
 
 class YearRangeDialog(QDialog):
@@ -111,20 +111,20 @@ class YearRangeDialog(QDialog):
         self.setWindowTitle("Escanear y vincular archivos")
         self.setMinimumWidth(300)
         self.layout = QVBoxLayout(self)
-
+        
         current_system_year = datetime.now().year
-
+        
         self.radio_current = QRadioButton(f"Solo el año actual ({current_year})")
         self.radio_range = QRadioButton("Rango de años")
         self.radio_range.setChecked(True)
-
+        
         self.bg = QButtonGroup(self)
         self.bg.addButton(self.radio_current)
         self.bg.addButton(self.radio_range)
-
+        
         self.layout.addWidget(self.radio_current)
         self.layout.addWidget(self.radio_range)
-
+        
         range_layout = QHBoxLayout()
         self.start_year = QSpinBox()
         self.start_year.setRange(2004, current_system_year)
@@ -132,16 +132,16 @@ class YearRangeDialog(QDialog):
         self.end_year = QSpinBox()
         self.end_year.setRange(2004, current_system_year)
         self.end_year.setValue(int(current_year))
-
+        
         range_layout.addWidget(QLabel("Desde:"))
         range_layout.addWidget(self.start_year)
         range_layout.addWidget(QLabel("Hasta:"))
         range_layout.addWidget(self.end_year)
-
+        
         self.range_widget = QWidget()
         self.range_widget.setLayout(range_layout)
         self.layout.addWidget(self.range_widget)
-
+        
         self.radio_current.toggled.connect(lambda checked: self.range_widget.setDisabled(checked))
 
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
