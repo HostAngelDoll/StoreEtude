@@ -11,7 +11,6 @@ class FilterMenu(QFrame):
         super().__init__(parent, Qt.WindowType.Popup)
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setWindowFlags(Qt.WindowType.Popup | Qt.WindowType.FramelessWindowHint)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(5, 5, 5, 5)
