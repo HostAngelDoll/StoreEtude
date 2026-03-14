@@ -666,23 +666,39 @@ class DataTableTab(QWidget):
         self.db_conn_name = db_conn_name
         db = QSqlDatabase.database(db_conn_name)
         
+        # Create new model
         if self.table_name == "T_Resources" and db_conn_name == "year_db":
-            self.model = QSqlRelationalTableModel(self, db)
-            self.model.setTable(self.table_name)
-            self.model.setRelation(1, QSqlRelation("T_Type_Resources", "idx", "type_resource"))
-            self.model.setRelation(2, QSqlRelation("T_Seasons", "precure_season_name", "precure_season_name"))
+            new_model = QSqlRelationalTableModel(self, db)
+            new_model.setTable(self.table_name)
+            new_model.setRelation(1, QSqlRelation("T_Type_Resources", "idx", "type_resource"))
+            new_model.setRelation(2, QSqlRelation("T_Seasons", "precure_season_name", "precure_season_name"))
         else:
-            self.model = QSqlTableModel(self, db)
-            self.model.setTable(self.table_name)
+            new_model = QSqlTableModel(self, db)
+            new_model.setTable(self.table_name)
             
-        self.model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
-        self.model.setFilter("")
-        self.model.select()
-        self.view.setModel(self.model)
-        if isinstance(self.model, QSqlRelationalTableModel):
+        new_model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
+        new_model.setFilter("")
+
+        # Important: set model to view before select for better synchronization
+        self.view.setModel(new_model)
+
+        if isinstance(new_model, QSqlRelationalTableModel):
             self.view.setItemDelegate(QSqlRelationalDelegate(self.view))
         else:
             self.view.setItemDelegate(None)
+
+        if not new_model.select():
+            self.log(f"Error al cargar datos en {self.table_name}: {new_model.lastError().text()}", is_error=True)
+
+        # Clean up old model
+        if hasattr(self, 'model') and self.model:
+            self.model.deleteLater()
+        self.model = new_model
+
+        # Reset header behavior
+        header = self.view.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.view.viewport().update()
 
     def set_console_visible(self, visible):
         self.console_area.setVisible(visible)
