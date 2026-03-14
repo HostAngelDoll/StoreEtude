@@ -17,8 +17,9 @@ class FilterMenu(QFrame):
         self.layout.setContentsMargins(5, 5, 5, 5)
         self.setStyleSheet("""
             QFrame {
-                background-color: #f0f0f0;
-                border: 1  px solid #ccc;
+                background-color: #333333;
+                color: white;
+                border: 1px solid #555;
                 border-radius: 4px;
             }
             QPushButton {
@@ -26,9 +27,27 @@ class FilterMenu(QFrame):
                 padding: 5px;
                 border: none;
                 background: transparent;
+                color: white;
             }
             QPushButton:hover {
-                background-color: #e0e0e0;
+                background-color: #444444;
+            }
+            QLineEdit {
+                background-color: #222;
+                color: white;
+                border: 1px solid #555;
+                padding: 2px;
+            }
+            QListWidget {
+                background-color: #222;
+                color: white;
+                border: 1px solid #555;
+            }
+            QListWidget::item:hover {
+                background-color: #444;
+            }
+            QCheckBox {
+                color: white;
             }
         """)
 
@@ -69,9 +88,10 @@ class FilterMenu(QFrame):
         # Footer buttons
         btn_layout = QHBoxLayout()
         self.btn_ok = QPushButton("Aceptar")
-        self.btn_ok.setStyleSheet("background-color: #0078d4; color: white; font-weight: bold; border-radius: 2px;")
+        self.btn_ok.setStyleSheet("background-color: #0078d4; color: white; font-weight: bold; border-radius: 2px; text-align: center;")
         self.btn_ok.clicked.connect(self.apply_filter)
         self.btn_cancel = QPushButton("Cancelar")
+        self.btn_cancel.setStyleSheet("background-color: #555; color: white; border-radius: 2px; text-align: center;")
         self.btn_cancel.clicked.connect(self.close)
         btn_layout.addWidget(self.btn_ok)
         btn_layout.addWidget(self.btn_cancel)

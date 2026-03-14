@@ -50,11 +50,17 @@ class ColumnHeaderView(QHeaderView):
         btn_rect = QRect(rect.right() - btn_size - margin, rect.center().y() - btn_size//2, btn_size, btn_size)
         self.filter_rects[logicalIndex] = btn_rect
 
-        painter.setBrush(QColor(200, 200, 200, 100))
+        # Determine button colors based on light/dark mode (heuristic)
+        is_dark = self.palette().window().color().lightness() < 128
+        bg_color = QColor(255, 255, 255, 60) if is_dark else QColor(0, 0, 0, 40)
+        text_color = Qt.GlobalColor.white if is_dark else Qt.GlobalColor.black
+
+        painter.setBrush(bg_color)
         painter.setPen(Qt.GlobalColor.transparent)
         painter.drawRoundedRect(btn_rect, 2, 2)
 
-        self.style().drawItemText(painter, btn_rect, Qt.AlignmentFlag.AlignCenter, self.palette(), True, "▼")
+        painter.setPen(text_color)
+        painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, "▼")
 
         painter.restore()
 
