@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableView,
                              QApplication, QAbstractItemView, QMenu, QProgressDialog)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor
+from datetime import datetime
 from PyQt6.QtSql import (QSqlTableModel, QSqlRelationalTableModel, QSqlRelation,
                          QSqlRelationalDelegate, QSqlQuery, QSqlDatabase)
 
@@ -379,7 +380,7 @@ class DataTableTab(QWidget):
         has_data = False
         db_paths_to_check = []
         if self.db_conn_name == "year_db":
-            for y in range(2004, 2027):
+            for y in range(2004, datetime.now().year + 1):
                 p = get_yearly_db_path(y)
                 if os.path.exists(p):
                     db_paths_to_check.append((y, p))
@@ -476,7 +477,7 @@ class DataTableTab(QWidget):
         init_yearly_dbs()
 
         current_db_path = os.path.abspath(QSqlDatabase.database(self.db_conn_name).databaseName())
-        years = list(range(2004, 2027))
+        years = list(range(2004, datetime.now().year + 1))
 
         progress = QProgressDialog("Propagando cambios de esquema...", "Cancelar", 0, len(years), self)
         progress.setWindowModality(Qt.WindowModality.WindowModal)

@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QDialog, QFormLayout, QLineEdit, QSpinBox,
                              QCheckBox, QDialogButtonBox, QMessageBox, QComboBox,
                              QVBoxLayout, QHBoxLayout, QRadioButton, QButtonGroup,
-                             QLabel)
+                             QLabel, QWidget)
 from PyQt6.QtSql import QSqlRelationalTableModel, QSqlRelation
 from PyQt6.QtCore import Qt
 from datetime import datetime
