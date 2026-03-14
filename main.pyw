@@ -245,7 +245,7 @@ class PrecureManagerApp(QMainWindow):
         for i, year in enumerate(years):
             progress.setValue(i)
             progress.setLabelText(f"Procesando año {year}...")
-            self.log(f"Iniciando migración para el año {year}...")
+            self.log(f"Iniciando migración de recursos para el año {year}...", target="resources")
             QApplication.processEvents()
 
             if progress.wasCanceled():
@@ -315,7 +315,12 @@ class PrecureManagerApp(QMainWindow):
                     query.addBindValue(str(sheet.cell(row=row_idx, column=15).value or ""))
                     query.addBindValue(None); query.addBindValue(None)
 
-                    if query.exec(): total_migrated += 1
+                    if query.exec():
+                        total_migrated += 1
+                        self.log(f"Migrado recurso: {final_title}", target="resources")
+                    else:
+                        self.log(f"Error al migrar recurso {final_title}: {query.lastError().text()}", is_error=True, target="resources")
+                    QApplication.processEvents()
 
                 db_year.close()
                 QSqlDatabase.removeDatabase(db_year_conn_name)
@@ -342,7 +347,7 @@ class PrecureManagerApp(QMainWindow):
         for i, year in enumerate(years):
             progress.setValue(i)
             progress.setLabelText(f"Procesando año {year}...")
-            self.log(f"Iniciando migración de registros para el año {year}...")
+            self.log(f"Iniciando migración de registros para el año {year}...", target="registry")
             QApplication.processEvents()
 
             if progress.wasCanceled(): break
@@ -408,7 +413,12 @@ class PrecureManagerApp(QMainWindow):
                     query.addBindValue(op_model)
                     query.addBindValue(op_name)
 
-                    if query.exec(): total_migrated += 1
+                    if query.exec():
+                        total_migrated += 1
+                        self.log(f"Migrado registro: {title_material} ({dt_range})", target="registry")
+                    else:
+                        self.log(f"Error al migrar registro {title_material}: {query.lastError().text()}", is_error=True, target="registry")
+                    QApplication.processEvents()
 
                 db_year.close()
                 QSqlDatabase.removeDatabase(db_year_conn_name)
@@ -981,8 +991,13 @@ class PrecureManagerApp(QMainWindow):
 
         return None, None
 
-    def log(self, message, is_error=False):
-        if hasattr(self, 'resources_tab'): self.resources_tab.log(message, is_error)
+    def log(self, message, is_error=False, target="resources"):
+        if target == "resources" and hasattr(self, 'resources_tab'):
+            self.resources_tab.log(message, is_error)
+        elif target == "registry" and hasattr(self, 'registry_tab'):
+            self.registry_tab.log(message, is_error)
+        elif hasattr(self, 'resources_tab'):
+            self.resources_tab.log(message, is_error)
 
 if __name__ == "__main__":
     init_databases(); app = QApplication(sys.argv); app.setStyle("Fusion")

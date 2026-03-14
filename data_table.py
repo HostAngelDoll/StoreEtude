@@ -662,6 +662,7 @@ class DataTableTab(QWidget):
         progress.setValue(len(years))
 
     def update_database(self, db_conn_name):
+        self.active_filters = {}
         self.db_conn_name = db_conn_name
         db = QSqlDatabase.database(db_conn_name)
         
@@ -675,6 +676,7 @@ class DataTableTab(QWidget):
             self.model.setTable(self.table_name)
             
         self.model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
+        self.model.setFilter("")
         self.model.select()
         self.view.setModel(self.model)
         if isinstance(self.model, QSqlRelationalTableModel):
