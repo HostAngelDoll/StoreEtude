@@ -76,6 +76,7 @@ class PrecureManagerApp(QMainWindow):
         self.settings.setValue("sidebar_visible", self.toggle_sidebar.isChecked())
         self.settings.setValue("console_visible", self.toggle_console.isChecked())
         self.settings.setValue("auto_resize", self.auto_resize_action.isChecked())
+        self.settings.setValue("show_construction_logs", self.show_construction_logs.isChecked())
 
     def load_settings(self):
         sidebar_visible = self.settings.value("sidebar_visible", True, type=bool)
@@ -89,6 +90,9 @@ class PrecureManagerApp(QMainWindow):
         auto_resize = self.settings.value("auto_resize", True, type=bool)
         self.auto_resize_action.setChecked(auto_resize)
         self.set_auto_resize_columns(auto_resize)
+
+        show_const_logs = self.settings.value("show_construction_logs", False, type=bool)
+        self.show_construction_logs.setChecked(show_const_logs)
 
     def set_auto_resize_columns(self, enabled):
         for tab in [self.registry_tab, self.resources_tab, self.catalog_tab,
@@ -171,6 +175,11 @@ class PrecureManagerApp(QMainWindow):
         self.toggle_console.setChecked(True)
         self.toggle_console.triggered.connect(self.toggle_sql_consoles)
         panels_submenu.addAction(self.toggle_console)
+
+        log_types_menu = view_menu.addMenu("Mostrar tipos de logs")
+        self.show_construction_logs = QAction("Mostrar logs de construcción de tablas", self, checkable=True)
+        self.show_construction_logs.setChecked(False)
+        log_types_menu.addAction(self.show_construction_logs)
 
         self.auto_resize_action = QAction("Auto-ajustar ancho de columnas", self, checkable=True)
         self.auto_resize_action.setChecked(True)
