@@ -38,19 +38,28 @@ class ComboDelegate(QStyledItemDelegate):
         if self.filter_str:
             rel_model.setFilter(self.filter_str)
         rel_model.select()
+        while rel_model.canFetchMore():
+            rel_model.fetchMore()
 
-        editor.setModel(rel_model)
-        editor.setModelColumn(rel_model.fieldIndex(self.model_column))
+        editor.addItem("", None) # Index 0
+        col_idx = rel_model.fieldIndex(self.model_column)
+        for r in range(rel_model.rowCount()):
+            val = rel_model.data(rel_model.index(r, col_idx))
+            editor.addItem(str(val), val)
+
         return editor
 
     def setEditorData(self, editor, index):
         value = index.data(Qt.ItemDataRole.EditRole)
-        idx = editor.findText(str(value))
+        idx = editor.findData(value)
         if idx >= 0:
             editor.setCurrentIndex(idx)
+        else:
+            editor.setCurrentIndex(0)
 
     def setModelData(self, editor, model, index):
-        model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
+        val = editor.currentData()
+        model.setData(index, val if val != "" else None, Qt.ItemDataRole.EditRole)
 
 class ColumnHeaderView(QHeaderView):
     def __init__(self, orientation, parent=None):

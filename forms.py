@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (QDialog, QFormLayout, QLineEdit, QSpinBox,
                              QCheckBox, QDialogButtonBox, QMessageBox, QComboBox,
                              QVBoxLayout, QHBoxLayout, QRadioButton, QButtonGroup,
                              QLabel, QWidget)
-from PyQt6.QtSql import QSqlRelationalTableModel, QSqlRelation
+from PyQt6.QtSql import QSqlRelationalTableModel, QSqlRelation, QSqlTableModel
 from PyQt6.QtCore import Qt
 from datetime import datetime
 
@@ -56,18 +56,26 @@ class DatabaseForm(QDialog):
 
                 # Ensure the relational model is populated
                 rel_model.select()
-                widget.setModel(rel_model)
-                widget.setModelColumn(rel_model.fieldIndex(relation.displayColumn()))
+                while rel_model.canFetchMore():
+                    rel_model.fetchMore()
+
+                # Add a blank entry to the combo box by using a proxy or manual addition
+                # Since we want to use the model, we can add the item manually and handle indices
+                widget.addItem("", None) # Blank item at index 0
+                for rel_row in range(rel_model.rowCount()):
+                    display_val = rel_model.data(rel_model.index(rel_row, rel_model.fieldIndex(relation.displayColumn())))
+                    key_val = rel_model.data(rel_model.index(rel_row, rel_model.fieldIndex(relation.indexColumn())))
+                    widget.addItem(str(display_val), key_val)
                 
                 if row >= 0:
-                    # Find the index of the current value in the relational model
                     current_val = self.record.value(i)
-                    for rel_row in range(rel_model.rowCount()):
-                        if rel_model.data(rel_model.index(rel_row, rel_model.fieldIndex(relation.indexColumn()))) == current_val:
-                            widget.setCurrentIndex(rel_row)
-                            break
+                    idx = widget.findData(current_val)
+                    if idx >= 0:
+                        widget.setCurrentIndex(idx)
+                    else:
+                        widget.setCurrentIndex(0)
                 else:
-                    widget.setCurrentIndex(-1)
+                    widget.setCurrentIndex(0)
             elif "is_" in field_name.lower():
                 widget = QCheckBox()
                 if row >= 0:
@@ -101,26 +109,8 @@ class DatabaseForm(QDialog):
                 elif isinstance(widget, QSpinBox):
                     self.record.setValue(i, widget.value())
                 elif isinstance(widget, QComboBox):
-                    rel_model = widget.model()
-                    current_rel_row = widget.currentIndex()
-                    if current_rel_row >= 0:
-                        # We need to know which column is the indexColumn.
-                        # In our case it's usually the same as displayColumn or we can infer it.
-                        # Since we used QSqlRelation to set it up:
-                        if isinstance(self.model, QSqlRelationalTableModel) and self.model.relation(i).isValid():
-                            relation = self.model.relation(i)
-                            index_col = relation.indexColumn()
-                        else:
-                            # Manual relation logic
-                            if self.model.tableName() == "T_Registry":
-                                index_col = "title_material" if field_name == "title_material" else "type"
-                            else:
-                                index_col = rel_model.record().fieldName(0) # Fallback
-
-                        key_val = rel_model.data(rel_model.index(current_rel_row, rel_model.fieldIndex(index_col)))
-                        self.record.setValue(i, key_val)
-                    else:
-                        self.record.setValue(i, None)
+                    key_val = widget.currentData()
+                    self.record.setValue(i, key_val if key_val != "" else None)
                 else:
                     self.record.setValue(i, widget.text())
         
