@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QDialog, QFormLayout, QLineEdit, QSpinBox,
                              QApplication)
 from PyQt6.QtSql import QSqlRelationalTableModel, QSqlRelation, QSqlTableModel, QSqlQuery, QSqlDatabase
 from PyQt6.QtCore import Qt, QEvent
-from PyQt6.QtGui import QStandardItemModel, QStandardItem
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QKeySequence
 from datetime import datetime
 import os
 
@@ -193,7 +193,7 @@ class ReportMaterialsDialog(QDialog):
         self.resize(1000, 600)
         self.layout = QVBoxLayout(self)
 
-        self.model = QStandardItemModel(0, 7)
+        self.model = QStandardItemModel(20, 7)
         self.model.setHorizontalHeaderLabels([
             "datetime_range_utc_06", "is_spinoff", "season", "title_material",
             "type_repeat", "type_listen", "model_writer"
@@ -226,7 +226,7 @@ class ReportMaterialsDialog(QDialog):
         self.view.installEventFilter(self)
 
     def eventFilter(self, source, event):
-        if event.type() == QEvent.Type.KeyPress and event.matches(QApplication.styleHints().keySequenceStandardOutput(Qt.StandardKey.Paste)[0]):
+        if event.type() == QEvent.Type.KeyPress and event.matches(QKeySequence.StandardKey.Paste):
             self.handle_paste()
             return True
         return super().eventFilter(source, event)
