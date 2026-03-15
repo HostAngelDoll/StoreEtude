@@ -1,0 +1,22 @@
+# Databases
+*.db
+_global.db
+
+# PyQt6 / Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.ipynb_checkpoints
+
+# Environment
+.venv/
+venv/
+env/
+.env
+
+# Backups
+backups/
+
+# User-specific
+.vscode/
+.idea/
