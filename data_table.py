@@ -673,6 +673,11 @@ class DataTableTab(QWidget):
         # Disable updates during swap to prevent artifacts
         self.main_splitter.setUpdatesEnabled(False)
 
+        # Retrieve auto-resize state from QMainWindow
+        auto_resize = True
+        if main_win and hasattr(main_win, 'auto_resize_action'):
+            auto_resize = main_win.auto_resize_action.isChecked()
+
         try:
             # 1. Clean up old model (keep view for now to avoid layout collapse)
             if hasattr(self, 'model') and self.model:
@@ -711,8 +716,14 @@ class DataTableTab(QWidget):
             const_log("Inicializando ColumnHeaderView...")
             new_header = ColumnHeaderView(Qt.Orientation.Horizontal, new_view)
             new_view.setHorizontalHeader(new_header)
-            # Re-apply stretch after model is set and data loaded
-            new_header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+            # Apply user setting for auto-resize
+            if auto_resize:
+                new_header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+                const_log("Header configurado en modo Stretch.")
+            else:
+                new_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+                const_log("Header configurado en modo Interactivo.")
 
             if isinstance(new_model, QSqlRelationalTableModel):
                 new_view.setItemDelegate(QSqlRelationalDelegate(new_view))
@@ -729,6 +740,9 @@ class DataTableTab(QWidget):
             if old_view:
                 old_view.deleteLater()
                 const_log("Vista antigua eliminada.")
+
+            if not auto_resize:
+                new_view.resizeColumnsToContents()
 
             const_log("Reconstrucción finalizada con éxito.")
 
