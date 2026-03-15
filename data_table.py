@@ -691,7 +691,23 @@ class DataTableTab(QWidget):
                 new_model.setTable(self.table_name)
                 new_model.setRelation(1, QSqlRelation("T_Type_Resources", "idx", "type_resource"))
                 new_model.setRelation(2, QSqlRelation("T_Seasons", "precure_season_name", "precure_season_name"))
-                const_log("Relaciones SQL configuradas.")
+                const_log("Relaciones SQL configuradas para T_Resources.")
+            elif self.table_name == "T_Registry" and db_conn_name == "year_db":
+                new_model = QSqlRelationalTableModel(self, db)
+                new_model.setTable(self.table_name)
+                new_model.setRelation(1, QSqlRelation("T_Resources", "title_material", "title_material"))
+                new_model.setRelation(3, QSqlRelation("T_Type_Catalog_Reg", "type", "type"))
+                new_model.setRelation(4, QSqlRelation("T_Type_Catalog_Reg", "type", "type"))
+                new_model.setRelation(5, QSqlRelation("T_Type_Catalog_Reg", "type", "type"))
+
+                # Filter relations
+                rm3 = new_model.relationModel(3)
+                if rm3: rm3.setFilter("category = 'repeat'")
+                rm4 = new_model.relationModel(4)
+                if rm4: rm4.setFilter("category = 'listen'")
+                rm5 = new_model.relationModel(5)
+                if rm5: rm5.setFilter("category = 'write'")
+                const_log("Relaciones SQL configuradas para T_Registry.")
             else:
                 new_model = QSqlTableModel(self, db)
                 new_model.setTable(self.table_name)

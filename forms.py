@@ -33,6 +33,13 @@ class DatabaseForm(QDialog):
             if relation.isValid():
                 widget = QComboBox()
                 rel_model = model.relationModel(i)
+
+                # If we are in T_Registry and it's one of the catalog columns,
+                # we need to make sure the relation model is filtered correctly.
+                # QSqlRelationalTableModel.relationModel(i) returns the same model instance
+                # if the relation points to the same table, but here we expect it
+                # to already have the filter set in DataTableTab.update_database.
+
                 # Ensure the relational model is populated
                 rel_model.select()
                 widget.setModel(rel_model)
@@ -45,6 +52,8 @@ class DatabaseForm(QDialog):
                         if rel_model.data(rel_model.index(rel_row, rel_model.fieldIndex(relation.indexColumn()))) == current_val:
                             widget.setCurrentIndex(rel_row)
                             break
+                else:
+                    widget.setCurrentIndex(-1)
             elif "is_" in field_name.lower():
                 widget = QCheckBox()
                 if row >= 0:
