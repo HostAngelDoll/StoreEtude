@@ -15,7 +15,7 @@ from PyQt6.QtSql import QSqlDatabase, QSqlQuery
 import openpyxl
 
 from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path, BASE_DIR_PATH
-from forms import DatabaseForm, YearRangeDialog
+from forms import DatabaseForm, YearRangeDialog, ReportMaterialsDialog
 from data_table import DataTableTab
 
 class PrecureManagerApp(QMainWindow):
@@ -146,6 +146,9 @@ class PrecureManagerApp(QMainWindow):
         self.scan_link_action = QAction("Escanear y vincular archivos", self)
         self.scan_link_action.triggered.connect(self.on_scan_link_requested)
 
+        self.report_materials_action = QAction("Reportar Materiales Vistos", self)
+        self.report_materials_action.triggered.connect(self.on_report_materials_requested)
+
         # Vista
         self.toggle_sidebar = QAction("Años", self, checkable=True)
         self.toggle_sidebar.setChecked(True)
@@ -193,6 +196,7 @@ class PrecureManagerApp(QMainWindow):
 
         tools_menu = menubar.addMenu("Herramientas")
         tools_menu.addAction(self.scan_link_action)
+        tools_menu.addAction(self.report_materials_action)
 
         view_menu = menubar.addMenu("Vista")
         panels_submenu = view_menu.addMenu("Mostrar Paneles")
@@ -561,6 +565,12 @@ class PrecureManagerApp(QMainWindow):
             years = dialog.get_years(current_year)
             self.scan_and_link_resources(years, overwrite=True)
             QMessageBox.information(self, "Escaneo", "Proceso de escaneo y vinculación completado.")
+
+    def on_report_materials_requested(self):
+        dialog = ReportMaterialsDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Refresh registry if it's the active tab
+            self.registry_tab.model.select()
 
     def scan_master_folders(self):
         if not os.path.exists(BASE_DIR_PATH):
@@ -958,68 +968,12 @@ class PrecureManagerApp(QMainWindow):
                 upd.exec()
 
     def calculate_lapsed(self, datetime_range):
-        try:
-            # Format: "2023-01-01 03:07:00-03:32:00"
-            parts = str(datetime_range).strip().split(' ')
-            if len(parts) < 2: return "00:00:00"
-
-            times = parts[1].split('-')
-            if len(times) < 2: return "00:00:00"
-
-            fmt = '%H:%M:%S'
-            start_t = datetime.strptime(times[0], fmt)
-            end_t = datetime.strptime(times[1], fmt)
-
-            delta = end_t - start_t
-            total_seconds = int(delta.total_seconds())
-            if total_seconds < 0:
-                total_seconds += 86400 # Handle midnight crossing
-
-            hours, remainder = divmod(total_seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-        except:
-            return "00:00:00"
+        from db_manager import calculate_lapsed
+        return calculate_lapsed(datetime_range)
 
     def get_opener_model_info(self, dt_range, model_writer):
-        if not dt_range or not model_writer:
-            return None, None
-
-        try:
-            # Extract date "YYYY-MM-DD"
-            date_str = str(dt_range).strip().split(' ')[0]
-            if not re.match(r'\d{4}-\d{2}-\d{2}', date_str):
-                return None, None
-
-            db_global = QSqlDatabase.database("global_db")
-            q = QSqlQuery(db_global)
-
-            writer_type = str(model_writer).lower()
-            if "overwrite" in writer_type:
-                col_start = "start_validity_overwrite"
-                col_end = "end_validity_overwrite"
-                col_subname = "model_name_overwrite"
-            elif "locally" in writer_type:
-                col_start = "start_validity_locally"
-                col_end = "end_validity_locally"
-                col_subname = "model_name_locally"
-            else:
-                return None, None
-
-            q.prepare(f"""
-                SELECT model_name, {col_subname}
-                FROM T_Opener_Models
-                WHERE ? >= {col_start} AND ? <= {col_end}
-            """)
-            q.addBindValue(date_str)
-            q.addBindValue(date_str)
-
-            if q.exec() and q.next():
-                return q.value(0), q.value(1)
-        except Exception as e:
-            print(f"Error in get_opener_model_info: {e}")
-
-        return None, None
+        from db_manager import get_opener_model_info
+        return get_opener_model_info(dt_range, model_writer)
 
     def log(self, message, is_error=False, target="resources"):
         if target == "resources" and hasattr(self, 'resources_tab'):
