@@ -13,9 +13,53 @@ from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor, QPainter, QPalette
 from datetime import datetime
 from PyQt6.QtSql import (QSqlTableModel, QSqlRelationalTableModel, QSqlRelation, 
                          QSqlRelationalDelegate, QSqlQuery, QSqlDatabase)
+from PyQt6.QtWidgets import QStyledItemDelegate, QComboBox
 
 from forms import DatabaseForm
 from filter_widget import FilterMenu
+
+class ComboDelegate(QStyledItemDelegate):
+    def __init__(self, table_name, model_column, filter_str=None, parent=None):
+        super().__init__(parent)
+        self.table_name = table_name
+        self.model_column = model_column
+        self.filter_str = filter_str
+
+    def createEditor(self, parent, option, index):
+        editor = QComboBox(parent)
+
+        # Get DB from model
+        model = index.model()
+        db = model.database()
+
+        # Create a temporary model for the combo
+        rel_model = QSqlTableModel(editor, db)
+        rel_model.setTable(self.table_name)
+        if self.filter_str:
+            rel_model.setFilter(self.filter_str)
+        rel_model.select()
+        while rel_model.canFetchMore():
+            rel_model.fetchMore()
+
+        editor.addItem("", None) # Index 0
+        col_idx = rel_model.fieldIndex(self.model_column)
+        for r in range(rel_model.rowCount()):
+            val = rel_model.data(rel_model.index(r, col_idx))
+            editor.addItem(str(val), val)
+
+        return editor
+
+    def setEditorData(self, editor, index):
+        value = index.data(Qt.ItemDataRole.EditRole)
+        idx = editor.findData(value)
+        if idx >= 0:
+            editor.setCurrentIndex(idx)
+        else:
+            editor.setCurrentIndex(0)
+
+    def setModelData(self, editor, model, index):
+        val = editor.currentData()
+        model.setData(index, val if val != "" else None, Qt.ItemDataRole.EditRole)
 
 class ColumnHeaderView(QHeaderView):
     def __init__(self, orientation, parent=None):
@@ -691,7 +735,7 @@ class DataTableTab(QWidget):
                 new_model.setTable(self.table_name)
                 new_model.setRelation(1, QSqlRelation("T_Type_Resources", "idx", "type_resource"))
                 new_model.setRelation(2, QSqlRelation("T_Seasons", "precure_season_name", "precure_season_name"))
-                const_log("Relaciones SQL configuradas.")
+                const_log("Relaciones SQL configuradas para T_Resources.")
             else:
                 new_model = QSqlTableModel(self, db)
                 new_model.setTable(self.table_name)
@@ -728,6 +772,15 @@ class DataTableTab(QWidget):
             if isinstance(new_model, QSqlRelationalTableModel):
                 new_view.setItemDelegate(QSqlRelationalDelegate(new_view))
                 const_log("Delegate relacional asignado.")
+
+            if self.table_name == "T_Registry" and db_conn_name == "year_db":
+                # Apply custom delegates for specific columns
+                # 1: title_material, 3: type_repeat, 4: type_listen, 5: model_writer
+                new_view.setItemDelegateForColumn(1, ComboDelegate("T_Resources", "title_material", parent=new_view))
+                new_view.setItemDelegateForColumn(3, ComboDelegate("T_Type_Catalog_Reg", "type", "category='repeat'", parent=new_view))
+                new_view.setItemDelegateForColumn(4, ComboDelegate("T_Type_Catalog_Reg", "type", "category='listen'", parent=new_view))
+                new_view.setItemDelegateForColumn(5, ComboDelegate("T_Type_Catalog_Reg", "type", "category='write'", parent=new_view))
+                const_log("Delegados personalizados asignados a T_Registry.")
 
             # 5. Swap in layout
             const_log("Actualizando Splitter...")

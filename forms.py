@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (QDialog, QFormLayout, QLineEdit, QSpinBox,
                              QCheckBox, QDialogButtonBox, QMessageBox, QComboBox,
                              QVBoxLayout, QHBoxLayout, QRadioButton, QButtonGroup,
                              QLabel, QWidget)
-from PyQt6.QtSql import QSqlRelationalTableModel, QSqlRelation
+from PyQt6.QtSql import QSqlRelationalTableModel, QSqlRelation, QSqlTableModel
 from PyQt6.QtCore import Qt
 from datetime import datetime
 
@@ -30,21 +30,52 @@ class DatabaseForm(QDialog):
             # Check if this field has a relation
             relation = model.relation(i) if is_relational else QSqlRelation()
             
+            # Special case for T_Registry which no longer uses QSqlRelationalTableModel
+            if not relation.isValid() and model.tableName() == "T_Registry":
+                if field_name == "title_material":
+                    relation = QSqlRelation("T_Resources", "title_material", "title_material")
+                elif field_name == "type_repeat":
+                    relation = QSqlRelation("T_Type_Catalog_Reg", "type", "type")
+                elif field_name == "type_listen":
+                    relation = QSqlRelation("T_Type_Catalog_Reg", "type", "type")
+                elif field_name == "model_writer":
+                    relation = QSqlRelation("T_Type_Catalog_Reg", "type", "type")
+
             if relation.isValid():
                 widget = QComboBox()
-                rel_model = model.relationModel(i)
+                if is_relational and model.relation(i).isValid():
+                    rel_model = model.relationModel(i)
+                else:
+                    # Manually create and filter the relation model
+                    rel_model = QSqlTableModel(self, model.database())
+                    rel_model.setTable(relation.tableName())
+                    if model.tableName() == "T_Registry":
+                        if field_name == "type_repeat": rel_model.setFilter("category = 'repeat'")
+                        elif field_name == "type_listen": rel_model.setFilter("category = 'listen'")
+                        elif field_name == "model_writer": rel_model.setFilter("category = 'write'")
+
                 # Ensure the relational model is populated
                 rel_model.select()
-                widget.setModel(rel_model)
-                widget.setModelColumn(rel_model.fieldIndex(relation.displayColumn()))
+                while rel_model.canFetchMore():
+                    rel_model.fetchMore()
+
+                # Add a blank entry to the combo box by using a proxy or manual addition
+                # Since we want to use the model, we can add the item manually and handle indices
+                widget.addItem("", None) # Blank item at index 0
+                for rel_row in range(rel_model.rowCount()):
+                    display_val = rel_model.data(rel_model.index(rel_row, rel_model.fieldIndex(relation.displayColumn())))
+                    key_val = rel_model.data(rel_model.index(rel_row, rel_model.fieldIndex(relation.indexColumn())))
+                    widget.addItem(str(display_val), key_val)
                 
                 if row >= 0:
-                    # Find the index of the current value in the relational model
                     current_val = self.record.value(i)
-                    for rel_row in range(rel_model.rowCount()):
-                        if rel_model.data(rel_model.index(rel_row, rel_model.fieldIndex(relation.indexColumn()))) == current_val:
-                            widget.setCurrentIndex(rel_row)
-                            break
+                    idx = widget.findData(current_val)
+                    if idx >= 0:
+                        widget.setCurrentIndex(idx)
+                    else:
+                        widget.setCurrentIndex(0)
+                else:
+                    widget.setCurrentIndex(0)
             elif "is_" in field_name.lower():
                 widget = QCheckBox()
                 if row >= 0:
@@ -78,11 +109,8 @@ class DatabaseForm(QDialog):
                 elif isinstance(widget, QSpinBox):
                     self.record.setValue(i, widget.value())
                 elif isinstance(widget, QComboBox):
-                    relation = self.model.relation(i)
-                    rel_model = self.model.relationModel(i)
-                    current_rel_row = widget.currentIndex()
-                    key_val = rel_model.data(rel_model.index(current_rel_row, rel_model.fieldIndex(relation.indexColumn())))
-                    self.record.setValue(i, key_val)
+                    key_val = widget.currentData()
+                    self.record.setValue(i, key_val if key_val != "" else None)
                 else:
                     self.record.setValue(i, widget.text())
         
