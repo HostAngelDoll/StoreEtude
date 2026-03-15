@@ -6,7 +6,8 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableView,
                              QHeaderView, QPushButton, QLabel, QPlainTextEdit,
                              QSplitter, QMessageBox, QFileDialog, QInputDialog,
                              QApplication, QAbstractItemView, QMenu, QProgressDialog,
-                             QStyle, QStyleOptionButton, QStyleOptionHeader)
+                             QStyle, QStyleOptionButton, QStyleOptionHeader,
+                             QMainWindow)
 from PyQt6.QtCore import Qt, QRect, QPoint
 from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor, QPainter, QPalette
 from datetime import datetime
@@ -28,6 +29,10 @@ class ColumnHeaderView(QHeaderView):
         size = super().sectionSizeFromContents(logicalIndex)
         size.setWidth(size.width() + 20) # Space for filter button
         return size
+
+    def sectionCountChanged(self, oldCount, newCount):
+        self.filter_rects.clear()
+        super().sectionCountChanged(oldCount, newCount)
 
     def paintSection(self, painter, rect, logicalIndex):
         painter.save()
@@ -113,32 +118,11 @@ class DataTableTab(QWidget):
         self.table_name = table_name
         self.layout = QVBoxLayout(self)
         
-        db = QSqlDatabase.database(db_conn_name)
-        if table_name == "T_Resources" and db_conn_name == "year_db":
-            self.model = QSqlRelationalTableModel(self, db)
-            self.model.setTable(table_name)
-            self.model.setRelation(1, QSqlRelation("T_Type_Resources", "idx", "type_resource"))
-            self.model.setRelation(2, QSqlRelation("T_Seasons", "precure_season_name", "precure_season_name"))
-        else:
-            self.model = QSqlTableModel(self, db)
-            self.model.setTable(table_name)
-            
-        self.model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
-        self.model.select()
-        
         self.view = QTableView()
-        self.view.setModel(self.model)
-        if isinstance(self.model, QSqlRelationalTableModel):
-            self.view.setItemDelegate(QSqlRelationalDelegate(self.view))
-        self.view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
-        
-        # Custom Header
-        header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
-        self.view.setHorizontalHeader(header)
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        
+        self.init_ui_components()
+        self.update_database(db_conn_name)
+
+    def init_ui_components(self):
         # CRUD Buttons
         self.btn_layout = QHBoxLayout()
         self.btn_add = QPushButton("Añadir")
@@ -662,25 +646,113 @@ class DataTableTab(QWidget):
         progress.setValue(len(years))
 
     def update_database(self, db_conn_name):
+        # Access application settings via main window
+        main_win = None
+        for widget in QApplication.topLevelWidgets():
+            if isinstance(widget, QMainWindow):
+                main_win = widget
+                break
+
+        show_logs = False
+        if main_win and hasattr(main_win, 'show_construction_logs'):
+            show_logs = main_win.show_construction_logs.isChecked()
+
+        def const_log(msg):
+            if show_logs: self.log(f"[UI_RECONST] {msg}")
+
+        const_log(f"--- Iniciando Reconstrucción Total: {self.table_name} ---")
+
+        self.active_filters = {}
         self.db_conn_name = db_conn_name
         db = QSqlDatabase.database(db_conn_name)
         
-        if self.table_name == "T_Resources" and db_conn_name == "year_db":
-            self.model = QSqlRelationalTableModel(self, db)
-            self.model.setTable(self.table_name)
-            self.model.setRelation(1, QSqlRelation("T_Type_Resources", "idx", "type_resource"))
-            self.model.setRelation(2, QSqlRelation("T_Seasons", "precure_season_name", "precure_season_name"))
-        else:
-            self.model = QSqlTableModel(self, db)
-            self.model.setTable(self.table_name)
+        if not db.isOpen():
+            const_log("ERROR: La base de datos no está abierta.")
+            return
+
+        # Disable updates during swap to prevent artifacts
+        self.main_splitter.setUpdatesEnabled(False)
+
+        # Retrieve auto-resize state from QMainWindow
+        auto_resize = True
+        if main_win and hasattr(main_win, 'auto_resize_action'):
+            auto_resize = main_win.auto_resize_action.isChecked()
+
+        try:
+            # 1. Clean up old model (keep view for now to avoid layout collapse)
+            if hasattr(self, 'model') and self.model:
+                self.model.deleteLater()
+                const_log("Modelo anterior liberado.")
+
+            # 2. Create new model
+            const_log(f"Creando nuevo modelo para {self.table_name}...")
+            if self.table_name == "T_Resources" and db_conn_name == "year_db":
+                new_model = QSqlRelationalTableModel(self, db)
+                new_model.setTable(self.table_name)
+                new_model.setRelation(1, QSqlRelation("T_Type_Resources", "idx", "type_resource"))
+                new_model.setRelation(2, QSqlRelation("T_Seasons", "precure_season_name", "precure_season_name"))
+                const_log("Relaciones SQL configuradas.")
+            else:
+                new_model = QSqlTableModel(self, db)
+                new_model.setTable(self.table_name)
             
-        self.model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
-        self.model.select()
-        self.view.setModel(self.model)
-        if isinstance(self.model, QSqlRelationalTableModel):
-            self.view.setItemDelegate(QSqlRelationalDelegate(self.view))
-        else:
-            self.view.setItemDelegate(None)
+            new_model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
+            new_model.setFilter("")
+
+            const_log("Ejecutando model.select()...")
+            if not new_model.select():
+                self.log(f"Error SQL: {new_model.lastError().text()}", is_error=True)
+            const_log(f"Carga completada. Filas: {new_model.rowCount()} | Columnas: {new_model.columnCount()}")
+
+            # 3. Create new View
+            const_log("Instanciando nueva QTableView...")
+            new_view = QTableView()
+            new_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+            new_view.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+            new_view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
+            new_view.setModel(new_model)
+
+            # 4. Create and Setup Header
+            const_log("Inicializando ColumnHeaderView...")
+            new_header = ColumnHeaderView(Qt.Orientation.Horizontal, new_view)
+            new_view.setHorizontalHeader(new_header)
+
+            # Apply user setting for auto-resize
+            if auto_resize:
+                new_header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+                const_log("Header configurado en modo Stretch.")
+            else:
+                new_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+                const_log("Header configurado en modo Interactivo.")
+
+            if isinstance(new_model, QSqlRelationalTableModel):
+                new_view.setItemDelegate(QSqlRelationalDelegate(new_view))
+                const_log("Delegate relacional asignado.")
+
+            # 5. Swap in layout
+            const_log("Actualizando Splitter...")
+            old_view = self.view if hasattr(self, 'view') else None
+            self.main_splitter.replaceWidget(0, new_view)
+
+            self.view = new_view
+            self.model = new_model
+
+            if old_view:
+                old_view.deleteLater()
+                const_log("Vista antigua eliminada.")
+
+            if not auto_resize:
+                new_view.resizeColumnsToContents()
+
+            const_log("Reconstrucción finalizada con éxito.")
+
+        except Exception as e:
+            self.log(f"Falla crítica en reconstrucción: {e}", is_error=True)
+        finally:
+            self.main_splitter.setUpdatesEnabled(True)
+            self.view.show()
+            self.view.viewport().update()
+            QApplication.processEvents()
 
     def set_console_visible(self, visible):
         self.console_area.setVisible(visible)
