@@ -30,15 +30,29 @@ class DatabaseForm(QDialog):
             # Check if this field has a relation
             relation = model.relation(i) if is_relational else QSqlRelation()
             
+            # Special case for T_Registry which no longer uses QSqlRelationalTableModel
+            if not relation.isValid() and model.tableName() == "T_Registry":
+                if field_name == "title_material":
+                    relation = QSqlRelation("T_Resources", "title_material", "title_material")
+                elif field_name == "type_repeat":
+                    relation = QSqlRelation("T_Type_Catalog_Reg", "type", "type")
+                elif field_name == "type_listen":
+                    relation = QSqlRelation("T_Type_Catalog_Reg", "type", "type")
+                elif field_name == "model_writer":
+                    relation = QSqlRelation("T_Type_Catalog_Reg", "type", "type")
+
             if relation.isValid():
                 widget = QComboBox()
-                rel_model = model.relationModel(i)
-
-                # If we are in T_Registry and it's one of the catalog columns,
-                # we need to make sure the relation model is filtered correctly.
-                # QSqlRelationalTableModel.relationModel(i) returns the same model instance
-                # if the relation points to the same table, but here we expect it
-                # to already have the filter set in DataTableTab.update_database.
+                if is_relational and model.relation(i).isValid():
+                    rel_model = model.relationModel(i)
+                else:
+                    # Manually create and filter the relation model
+                    rel_model = QSqlTableModel(self, model.database())
+                    rel_model.setTable(relation.tableName())
+                    if model.tableName() == "T_Registry":
+                        if field_name == "type_repeat": rel_model.setFilter("category = 'repeat'")
+                        elif field_name == "type_listen": rel_model.setFilter("category = 'listen'")
+                        elif field_name == "model_writer": rel_model.setFilter("category = 'write'")
 
                 # Ensure the relational model is populated
                 rel_model.select()
@@ -87,11 +101,26 @@ class DatabaseForm(QDialog):
                 elif isinstance(widget, QSpinBox):
                     self.record.setValue(i, widget.value())
                 elif isinstance(widget, QComboBox):
-                    relation = self.model.relation(i)
-                    rel_model = self.model.relationModel(i)
+                    rel_model = widget.model()
                     current_rel_row = widget.currentIndex()
-                    key_val = rel_model.data(rel_model.index(current_rel_row, rel_model.fieldIndex(relation.indexColumn())))
-                    self.record.setValue(i, key_val)
+                    if current_rel_row >= 0:
+                        # We need to know which column is the indexColumn.
+                        # In our case it's usually the same as displayColumn or we can infer it.
+                        # Since we used QSqlRelation to set it up:
+                        if isinstance(self.model, QSqlRelationalTableModel) and self.model.relation(i).isValid():
+                            relation = self.model.relation(i)
+                            index_col = relation.indexColumn()
+                        else:
+                            # Manual relation logic
+                            if self.model.tableName() == "T_Registry":
+                                index_col = "title_material" if field_name == "title_material" else "type"
+                            else:
+                                index_col = rel_model.record().fieldName(0) # Fallback
+
+                        key_val = rel_model.data(rel_model.index(current_rel_row, rel_model.fieldIndex(index_col)))
+                        self.record.setValue(i, key_val)
+                    else:
+                        self.record.setValue(i, None)
                 else:
                     self.record.setValue(i, widget.text())
         
