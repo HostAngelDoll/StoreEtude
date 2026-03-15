@@ -29,6 +29,10 @@ class ColumnHeaderView(QHeaderView):
         size.setWidth(size.width() + 20) # Space for filter button
         return size
 
+    def sectionCountChanged(self, oldCount, newCount):
+        self.filter_rects.clear()
+        super().sectionCountChanged(oldCount, newCount)
+
     def paintSection(self, painter, rect, logicalIndex):
         painter.save()
         
@@ -679,8 +683,13 @@ class DataTableTab(QWidget):
         new_model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
         new_model.setFilter("")
 
-        # Important: set model to view before select for better synchronization
+        # Reset model to view and recreate header to fix rendering bugs
+        self.view.setModel(None)
         self.view.setModel(new_model)
+
+        header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.view.setHorizontalHeader(header)
 
         if isinstance(new_model, QSqlRelationalTableModel):
             self.view.setItemDelegate(QSqlRelationalDelegate(self.view))
@@ -695,9 +704,7 @@ class DataTableTab(QWidget):
             self.model.deleteLater()
         self.model = new_model
 
-        # Reset header behavior
-        header = self.view.horizontalHeader()
-        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.view.reset()
         self.view.viewport().update()
 
     def set_console_visible(self, visible):
