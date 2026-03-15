@@ -141,24 +141,24 @@ class FilterMenu(QFrame):
 
     def show_at(self, pos):
         self.show() # Show first to get correct size
-
+        
         # Adjust position to stay on screen
         screen = self.screen().availableGeometry()
         size = self.sizeHint()
-
+        
         x = pos.x()
         y = pos.y()
-
+        
         if x + size.width() > screen.right():
             x = screen.right() - size.width()
-
+        
         if y + size.height() > screen.bottom():
             y = screen.bottom() - size.height()
-
+            
         if x < screen.left():
             x = screen.left()
         if y < screen.top():
             y = screen.top()
-
+            
         self.move(x, y)
         self.search_box.setFocus()

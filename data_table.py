@@ -27,11 +27,11 @@ class ComboDelegate(QStyledItemDelegate):
 
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
-
+        
         # Get DB from model
         model = index.model()
         db = model.database()
-
+        
         # Create a temporary model for the combo
         rel_model = QSqlTableModel(editor, db)
         rel_model.setTable(self.table_name)
@@ -40,13 +40,13 @@ class ComboDelegate(QStyledItemDelegate):
         rel_model.select()
         while rel_model.canFetchMore():
             rel_model.fetchMore()
-
+        
         editor.addItem("", None) # Index 0
         col_idx = rel_model.fieldIndex(self.model_column)
         for r in range(rel_model.rowCount()):
             val = rel_model.data(rel_model.index(r, col_idx))
             editor.addItem(str(val), val)
-
+            
         return editor
 
     def setEditorData(self, editor, index):
@@ -772,7 +772,7 @@ class DataTableTab(QWidget):
             if isinstance(new_model, QSqlRelationalTableModel):
                 new_view.setItemDelegate(QSqlRelationalDelegate(new_view))
                 const_log("Delegate relacional asignado.")
-
+            
             if self.table_name == "T_Registry" and db_conn_name == "year_db":
                 # Apply custom delegates for specific columns
                 # 1: title_material, 3: type_repeat, 4: type_listen, 5: model_writer

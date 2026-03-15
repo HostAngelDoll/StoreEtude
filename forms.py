@@ -53,12 +53,12 @@ class DatabaseForm(QDialog):
                         if field_name == "type_repeat": rel_model.setFilter("category = 'repeat'")
                         elif field_name == "type_listen": rel_model.setFilter("category = 'listen'")
                         elif field_name == "model_writer": rel_model.setFilter("category = 'write'")
-
+                
                 # Ensure the relational model is populated
                 rel_model.select()
                 while rel_model.canFetchMore():
                     rel_model.fetchMore()
-
+                
                 # Add a blank entry to the combo box by using a proxy or manual addition
                 # Since we want to use the model, we can add the item manually and handle indices
                 widget.addItem("", None) # Blank item at index 0
