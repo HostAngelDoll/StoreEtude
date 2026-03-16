@@ -358,6 +358,7 @@ class SpinoffDelegate(QStyledItemDelegate):
 class SeasonDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
+        editor.addItem("", None)
         is_spinoff_str = index.model().data(index.model().index(index.row(), 1))
         is_spinoff = 1 if is_spinoff_str == "Sí" else 0
         
@@ -411,6 +412,7 @@ class TypeResourceDelegate(QStyledItemDelegate):
 class TitleMaterialDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
+        editor.addItem("", None)
         season = index.model().data(index.model().index(index.row(), 2))
         type_res = index.model().data(index.model().index(index.row(), 3))
         if not season:
