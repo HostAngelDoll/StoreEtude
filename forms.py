@@ -388,7 +388,8 @@ class TypeResourceDelegate(QStyledItemDelegate):
         editor = QComboBox(parent)
         editor.addItem("", None)
         db = QSqlDatabase.database("global_db")
-        q = QSqlQuery(db, "SELECT type_resource FROM T_Type_Resources ORDER BY type_resource ASC")
+        q = QSqlQuery(db)
+        q.exec("SELECT type_resource FROM T_Type_Resources ORDER BY type_resource ASC")
         while q.next():
             editor.addItem(q.value(0))
         return editor
