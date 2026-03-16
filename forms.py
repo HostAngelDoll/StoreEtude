@@ -12,7 +12,7 @@ import os
 class DatabaseForm(QDialog):
     def __init__(self, model, row=-1, parent=None):
         super().__init__(parent)
-        self.setWindowIcon(QIcon("img\icon.ico"))
+        self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.model = model
         self.row = row
         self.record = model.record(row) if row >= 0 else model.record()
@@ -140,7 +140,7 @@ class DatabaseForm(QDialog):
 class YearRangeDialog(QDialog):
     def __init__(self, current_year, parent=None):
         super().__init__(parent)
-        self.setWindowIcon(QIcon("img\icon.ico"))
+        self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.setWindowTitle("Escanear y vincular archivos")
         self.setMinimumWidth(300)
         self.layout = QVBoxLayout(self)
@@ -191,7 +191,7 @@ class YearRangeDialog(QDialog):
 class ReportMaterialsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowIcon(QIcon("img\icon.ico"))
+        self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.setWindowTitle("Reportar Materiales Vistos")
         self.resize(1000, 600)
         self.layout = QVBoxLayout(self)

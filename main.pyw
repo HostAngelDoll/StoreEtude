@@ -23,7 +23,7 @@ class PrecureManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Precure Media Manager - Core System")
-        self.setWindowIcon(QIcon("img\icon.ico"))
+        self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.settings = QSettings("MyCompany", "PrecureMediaManager")
 
         geometry = self.settings.value("geometry")
@@ -1028,7 +1028,7 @@ if __name__ == "__main__":
     init_databases()
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
-    app.setWindowIcon(QIcon("img\icon.ico"))
+    app.setWindowIcon(QIcon(r"img\icon.ico"))
 
     window = PrecureManagerApp()
     window.show()
