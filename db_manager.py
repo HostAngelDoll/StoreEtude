@@ -106,7 +106,7 @@ def get_opener_model_info(dt_range, model_writer):
         db_global = QSqlDatabase.database("global_db")
         if not db_global.isOpen():
             return None, None
-
+            
         q = QSqlQuery(db_global)
 
         writer_type = str(model_writer).lower()
