@@ -4,13 +4,14 @@ import re
 import sqlite3
 import csv
 import subprocess
+import ctypes
 from datetime import datetime
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTabWidget, QLabel, QHBoxLayout, QTreeView,
                              QDockWidget, QDialog, QMessageBox, QMenuBar, QMenu,
                              QProgressDialog)
 from PyQt6.QtCore import Qt, QSettings
-from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon
 from PyQt6.QtSql import QSqlDatabase, QSqlQuery
 import openpyxl
 
@@ -22,6 +23,7 @@ class PrecureManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Precure Media Manager - Core System")
+        self.setWindowIcon(QIcon("img\icon.ico"))
         self.settings = QSettings("MyCompany", "PrecureMediaManager")
 
         geometry = self.settings.value("geometry")
@@ -1019,5 +1021,15 @@ class PrecureManagerApp(QMainWindow):
             self.resources_tab.log(message, is_error)
 
 if __name__ == "__main__":
-    init_databases(); app = QApplication(sys.argv); app.setStyle("Fusion")
-    window = PrecureManagerApp(); window.show(); sys.exit(app.exec())
+    if os.name == 'nt':
+        myappid = 'storeetude.precuremanager.desktopcenter.1'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
+    init_databases()
+    app = QApplication(sys.argv)
+    app.setStyle("Fusion")
+    app.setWindowIcon(QIcon("img\icon.ico"))
+
+    window = PrecureManagerApp()
+    window.show()
+    sys.exit(app.exec())
