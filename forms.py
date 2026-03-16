@@ -193,13 +193,13 @@ class ReportMaterialsDialog(QDialog):
         super().__init__(parent)
         self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.setWindowTitle("Reportar Materiales Vistos")
-        self.resize(1000, 600)
+        self.resize(1100, 600)
         self.layout = QVBoxLayout(self)
 
-        self.model = QStandardItemModel(20, 7)
+        self.model = QStandardItemModel(20, 8)
         self.model.setHorizontalHeaderLabels([
-            "datetime_range_utc_06", "is_spinoff", "season", "title_material",
-            "type_repeat", "type_listen", "model_writer"
+            "datetime_range_utc_06", "is_spinoff", "season", "type_resource",
+            "title_material", "type_repeat", "type_listen", "model_writer"
         ])
 
         self.view = QTableView()
@@ -209,10 +209,11 @@ class ReportMaterialsDialog(QDialog):
         # Delegates
         self.view.setItemDelegateForColumn(1, SpinoffDelegate(self))
         self.view.setItemDelegateForColumn(2, SeasonDelegate(self))
-        self.view.setItemDelegateForColumn(3, TitleMaterialDelegate(self))
-        self.view.setItemDelegateForColumn(4, CatalogDelegate("repeat", self))
-        self.view.setItemDelegateForColumn(5, CatalogDelegate("listen", self))
-        self.view.setItemDelegateForColumn(6, CatalogDelegate("write", self))
+        self.view.setItemDelegateForColumn(3, TypeResourceDelegate(self))
+        self.view.setItemDelegateForColumn(4, TitleMaterialDelegate(self))
+        self.view.setItemDelegateForColumn(5, CatalogDelegate("repeat", self))
+        self.view.setItemDelegateForColumn(6, CatalogDelegate("listen", self))
+        self.view.setItemDelegateForColumn(7, CatalogDelegate("write", self))
 
         self.layout.addWidget(QLabel("Pega los datetimes en la primera columna. Las temporadas y materiales se filtrarán según tu selección."))
         self.layout.addWidget(self.view)
@@ -248,7 +249,7 @@ class ReportMaterialsDialog(QDialog):
         for i, line in enumerate(lines):
             row_to_fill = current_row + i
             if row_to_fill >= self.model.rowCount():
-                self.model.appendRow([QStandardItem("") for _ in range(7)])
+                self.model.appendRow([QStandardItem("") for _ in range(8)])
             
             self.model.setData(self.model.index(row_to_fill, 0), line.strip())
 
@@ -259,14 +260,14 @@ class ReportMaterialsDialog(QDialog):
         for r in range(self.model.rowCount()):
             dt = self.model.data(self.model.index(r, 0))
             season = self.model.data(self.model.index(r, 2))
-            title = self.model.data(self.model.index(r, 3))
+            title = self.model.data(self.model.index(r, 4))
             
             if not dt or not season or not title:
                 continue
                 
-            type_repeat = self.model.data(self.model.index(r, 4))
-            type_listen = self.model.data(self.model.index(r, 5))
-            model_writer = self.model.data(self.model.index(r, 6))
+            type_repeat = self.model.data(self.model.index(r, 5))
+            type_listen = self.model.data(self.model.index(r, 6))
+            model_writer = self.model.data(self.model.index(r, 7))
             
             # Find year for this season
             db_global = QSqlDatabase.database("global_db")
@@ -349,13 +350,15 @@ class SpinoffDelegate(QStyledItemDelegate):
         new_val = editor.currentText()
         model.setData(index, new_val, Qt.ItemDataRole.EditRole)
         if old_val != new_val:
-            # Clear season and title_material if is_spinoff changed
+            # Clear season, type_resource and title_material if is_spinoff changed
             model.setData(model.index(index.row(), 2), "", Qt.ItemDataRole.EditRole)
             model.setData(model.index(index.row(), 3), "", Qt.ItemDataRole.EditRole)
+            model.setData(model.index(index.row(), 4), "", Qt.ItemDataRole.EditRole)
 
 class SeasonDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
+        editor.addItem("", None)
         is_spinoff_str = index.model().data(index.model().index(index.row(), 1))
         is_spinoff = 1 if is_spinoff_str == "Sí" else 0
         
@@ -379,12 +382,39 @@ class SeasonDelegate(QStyledItemDelegate):
         model.setData(index, new_val, Qt.ItemDataRole.EditRole)
         if old_val != new_val:
             # Clear title_material if season changed
-            model.setData(model.index(index.row(), 3), "", Qt.ItemDataRole.EditRole)
+            model.setData(model.index(index.row(), 4), "", Qt.ItemDataRole.EditRole)
+
+class TypeResourceDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, option, index):
+        editor = QComboBox(parent)
+        editor.addItem("", None)
+        db = QSqlDatabase.database("global_db")
+        q = QSqlQuery(db)
+        q.exec("SELECT type_resource FROM T_Type_Resources ORDER BY type_resource ASC")
+        while q.next():
+            editor.addItem(q.value(0))
+        return editor
+
+    def setEditorData(self, editor, index):
+        val = index.data(Qt.ItemDataRole.EditRole)
+        idx = editor.findText(str(val))
+        if idx >= 0: editor.setCurrentIndex(idx)
+        else: editor.setCurrentIndex(0)
+
+    def setModelData(self, editor, model, index):
+        old_val = model.data(index, Qt.ItemDataRole.EditRole)
+        new_val = editor.currentText()
+        model.setData(index, new_val, Qt.ItemDataRole.EditRole)
+        if old_val != new_val:
+            # Clear title_material if type_resource changed
+            model.setData(model.index(index.row(), 4), "", Qt.ItemDataRole.EditRole)
 
 class TitleMaterialDelegate(QStyledItemDelegate):
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
+        editor.addItem("", None)
         season = index.model().data(index.model().index(index.row(), 2))
+        type_res = index.model().data(index.model().index(index.row(), 3))
         if not season:
             return editor
             
@@ -402,8 +432,24 @@ class TitleMaterialDelegate(QStyledItemDelegate):
             db_year.setDatabaseName(db_path)
             if db_year.open():
                 qy = QSqlQuery(db_year)
-                qy.prepare("SELECT title_material FROM T_Resources WHERE precure_season_name = ? ORDER BY title_material ASC")
+
+                sql = "SELECT title_material FROM T_Resources WHERE precure_season_name = ?"
+                type_idx = None
+                if type_res:
+                    q_idx = QSqlQuery(db_global)
+                    q_idx.prepare("SELECT idx FROM T_Type_Resources WHERE type_resource = ?")
+                    q_idx.addBindValue(type_res)
+                    if q_idx.exec() and q_idx.next():
+                        type_idx = q_idx.value(0)
+                        sql += " AND type_material = ?"
+
+                sql += " ORDER BY title_material ASC"
+
+                qy.prepare(sql)
                 qy.addBindValue(season)
+                if type_idx is not None:
+                    qy.addBindValue(type_idx)
+
                 if qy.exec():
                     while qy.next():
                         editor.addItem(qy.value(0))
