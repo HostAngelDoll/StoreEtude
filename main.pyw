@@ -464,53 +464,88 @@ class PrecureManagerApp(QMainWindow):
         QMessageBox.information(self, "Migración", f"Se migraron {total_migrated} registros en total.")
 
     def regenerate_registry_index(self):
-        db = QSqlDatabase.database("year_db")
-        if not db.isOpen(): return
-
-        # 1. Fetch all records ordered by datetime_range_utc_06
-        records = []
-        q = QSqlQuery(db)
-        if not q.exec("SELECT title_material, datetime_range_utc_06, type_repeat, type_listen, model_writer, lapsed_calculated, opener_model, name_of_opener_model FROM T_Registry ORDER BY datetime_range_utc_06 ASC"):
-            QMessageBox.critical(self, "Error", "No se pudieron obtener los registros.")
+        current_year = self.get_current_year()
+        dialog = YearRangeDialog(current_year, self)
+        dialog.setWindowTitle("Regenerar columna index")
+        if dialog.exec() != QDialog.DialogCode.Accepted:
             return
 
-        while q.next():
-            records.append([q.value(i) for i in range(8)])
+        years = dialog.get_years(current_year)
+        progress = QProgressDialog("Regenerando índices...", "Cancelar", 0, len(years), self)
+        progress.setWindowTitle("Procesando años")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.show()
 
-        # 2. Re-create table strategy
-        q.exec("BEGIN TRANSACTION")
-        q.exec("CREATE TABLE T_Registry_New AS SELECT * FROM T_Registry WHERE 0")
-        # In SQLite, CREATE TABLE AS doesn't keep PK/AUTOINCREMENT usually.
-        # Better use the actual SQL but to a new name.
+        total_processed = 0
+        for i, year in enumerate(years):
+            progress.setValue(i)
+            progress.setLabelText(f"Procesando año {year}...")
+            self.log(f"Regenerando índice de registros para el año {year}...", target="registry")
+            QApplication.processEvents()
+            if progress.wasCanceled(): break
 
-        # Get original SQL
-        q_schema = QSqlQuery(db)
-        q_schema.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='T_Registry'")
-        if q_schema.next():
-            original_sql = q_schema.value(0)
-            new_sql = original_sql.replace("T_Registry", "T_Registry_New")
-            q.exec("DROP TABLE IF EXISTS T_Registry_New")
-            q.exec(new_sql)
+            db_path = get_yearly_db_path(year)
+            if not os.path.exists(db_path): continue
 
-        # Insert records with new index
-        q_ins = QSqlQuery(db)
-        for r in records:
-            q_ins.prepare("""
-                INSERT INTO T_Registry_New (
-                    title_material, datetime_range_utc_06, type_repeat,
-                    type_listen, model_writer, lapsed_calculated,
-                    opener_model, name_of_opener_model
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """)
-            for val in r: q_ins.addBindValue(val)
-            q_ins.exec()
+            conn_name = f"regen_idx_{year}"
+            db = QSqlDatabase.addDatabase("QSQLITE", conn_name)
+            db.setDatabaseName(db_path)
+            if not db.open():
+                self.log(f"No se pudo abrir la DB del año {year}", is_error=True, target="registry")
+                continue
 
-        q.exec("DROP TABLE T_Registry")
-        q.exec("ALTER TABLE T_Registry_New RENAME TO T_Registry")
-        q.exec("COMMIT")
+            try:
+                q = QSqlQuery(db)
+                columns = []
+                q.exec("PRAGMA table_info(T_Registry)")
+                while q.next():
+                    col_name = q.value(1)
+                    if col_name.lower() != "idx":
+                        columns.append(col_name)
 
+                if not columns:
+                    self.log(f"No se encontraron columnas en T_Registry para el año {year}", is_error=True, target="registry")
+                    db.close()
+                    QSqlDatabase.removeDatabase(conn_name)
+                    continue
+
+                q.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='T_Registry'")
+                if not q.next():
+                    self.log(f"No se encontró el esquema de T_Registry para el año {year}", is_error=True, target="registry")
+                    db.close()
+                    QSqlDatabase.removeDatabase(conn_name)
+                    continue
+
+                original_sql = q.value(0)
+                temp_sql = re.sub(r'\bT_Registry\b', 'T_Registry_temp', original_sql)
+
+                db.transaction()
+                q.exec("DROP TABLE IF EXISTS T_Registry_temp")
+                if not q.exec(temp_sql):
+                    raise Exception(f"Error creando tabla temporal: {q.lastError().text()}")
+
+                cols_str = ", ".join(columns)
+                insert_sql = f"INSERT INTO T_Registry_temp ({cols_str}) SELECT {cols_str} FROM T_Registry ORDER BY datetime_range_utc_06 ASC"
+                if not q.exec(insert_sql):
+                    raise Exception(f"Error insertando datos: {q.lastError().text()}")
+
+                q.exec("DROP TABLE T_Registry")
+                q.exec("ALTER TABLE T_Registry_temp RENAME TO T_Registry")
+                q.exec("DELETE FROM sqlite_sequence WHERE name='T_Registry'")
+
+                db.commit()
+                total_processed += 1
+                self.log(f"Índice regenerado para el año {year}", target="registry")
+            except Exception as e:
+                db.rollback()
+                self.log(f"Error en año {year}: {str(e)}", is_error=True, target="registry")
+            finally:
+                db.close()
+                QSqlDatabase.removeDatabase(conn_name)
+
+        progress.setValue(len(years))
         self.registry_tab.model.select()
-        QMessageBox.information(self, "Índice", "Columna index regenerada correctamente.")
+        QMessageBox.information(self, "Regenerar Índice", f"Se procesaron {total_processed} años correctamente.")
 
     def recalculate_registry_lapses(self):
         db = QSqlDatabase.database("year_db")
