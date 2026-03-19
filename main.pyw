@@ -58,11 +58,13 @@ class PrecureManagerApp(QMainWindow):
         self.opener_tab = DataTableTab("global_db", "T_Opener_Models")
         self.type_res_tab = DataTableTab("global_db", "T_Type_Resources")
         self.seasons_tab = DataTableTab("global_db", "T_Seasons")
+        self.domains_tab = DataTableTab("global_db", "T_Domains_base")
 
         self.global_subtabs.addTab(self.catalog_tab, "Catálogo")
         self.global_subtabs.addTab(self.opener_tab, "Modelos Opener")
         self.global_subtabs.addTab(self.type_res_tab, "Tipos Recursos")
         self.global_subtabs.addTab(self.seasons_tab, "Temporadas")
+        self.global_subtabs.addTab(self.domains_tab, "Dominios Base")
         global_layout.addWidget(self.global_subtabs)
 
         self.tabs.addTab(self.registry_tab, "Registros")
@@ -101,7 +103,7 @@ class PrecureManagerApp(QMainWindow):
 
     def set_auto_resize_columns(self, enabled):
         for tab in [self.registry_tab, self.resources_tab, self.catalog_tab,
-                    self.opener_tab, self.type_res_tab, self.seasons_tab]:
+                    self.opener_tab, self.type_res_tab, self.seasons_tab, self.domains_tab]:
             tab.set_auto_resize(enabled)
 
     def init_actions(self):
@@ -644,6 +646,7 @@ class PrecureManagerApp(QMainWindow):
         self.opener_tab.set_console_visible(is_visible)
         self.type_res_tab.set_console_visible(is_visible)
         self.seasons_tab.set_console_visible(is_visible)
+        self.domains_tab.set_console_visible(is_visible)
 
     def init_db_connections(self):
         if not QSqlDatabase.contains("global_db"):

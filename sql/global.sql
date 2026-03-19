@@ -35,3 +35,12 @@ CREATE TABLE IF NOT EXISTS T_Seasons (
     release_date TEXT,
     path_master TEXT
 );
+
+CREATE TABLE IF NOT EXISTS T_Domains_base (
+    idx INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain TEXT UNIQUE,
+    year_rng TEXT UNIQUE,
+    apellido_recursos TEXT UNIQUE,
+    apellido_estancias_vividas TEXT UNIQUE,
+    apellido_objetivos_primer_abril_sabatino TEXT UNIQUE
+);
