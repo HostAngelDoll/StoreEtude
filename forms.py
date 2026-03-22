@@ -254,9 +254,9 @@ class ReportMaterialsDialog(QDialog):
             self.model.setData(self.model.index(row_to_fill, 0), line.strip())
 
     def process_addition(self):
-        from db_manager import get_yearly_db_path, calculate_lapsed, get_opener_model_info
+        from db_operations import DBOperations
         
-        records_to_add = []
+        materials_list = []
         for r in range(self.model.rowCount()):
             dt = self.model.data(self.model.index(r, 0))
             season = self.model.data(self.model.index(r, 2))
@@ -265,70 +265,21 @@ class ReportMaterialsDialog(QDialog):
             if not dt or not season or not title:
                 continue
                 
-            type_repeat = self.model.data(self.model.index(r, 5))
-            type_listen = self.model.data(self.model.index(r, 6))
-            model_writer = self.model.data(self.model.index(r, 7))
-            
-            # Find year for this season
-            db_global = QSqlDatabase.database("global_db")
-            q = QSqlQuery(db_global)
-            q.prepare("SELECT year FROM T_Seasons WHERE precure_season_name = ?")
-            q.addBindValue(season)
-            year = None
-            if q.exec() and q.next():
-                year = q.value(0)
-            
-            if not year:
-                continue
-
-            lapsed = calculate_lapsed(dt)
-            op_model, op_name = get_opener_model_info(dt, model_writer)
-            
-            records_to_add.append({
-                'year': year,
-                'data': (title, dt, type_repeat, type_listen, model_writer, lapsed, op_model, op_name)
+            materials_list.append({
+                'dt': dt,
+                'season': season,
+                'title': title,
+                'type_repeat': self.model.data(self.model.index(r, 5)),
+                'type_listen': self.model.data(self.model.index(r, 6)),
+                'model_writer': self.model.data(self.model.index(r, 7))
             })
 
-        if not records_to_add:
+        if not materials_list:
             QMessageBox.warning(self, "Advertencia", "No hay registros válidos para agregar (asegúrate de llenar datetime, season y material).")
             return
 
-        # Group by year
-        by_year = {}
-        for rec in records_to_add:
-            by_year.setdefault(rec['year'], []).append(rec['data'])
-
-        success_count = 0
-        for year, rows in by_year.items():
-            db_path = get_yearly_db_path(year)
-            if not os.path.exists(db_path):
-                continue
-            
-            conn_name = f"report_db_{year}"
-            db = QSqlDatabase.addDatabase("QSQLITE", conn_name)
-            db.setDatabaseName(db_path)
-            if not db.open():
-                continue
-                
-            query = QSqlQuery(db)
-            db.transaction()
-            for row in rows:
-                query.prepare("""
-                    INSERT INTO T_Registry (
-                        title_material, datetime_range_utc_06, type_repeat,
-                        type_listen, model_writer, lapsed_calculated,
-                        opener_model, name_of_opener_model
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """)
-                for val in row:
-                    query.addBindValue(val)
-                
-                if query.exec():
-                    success_count += 1
-            
-            db.commit()
-            db.close()
-            QSqlDatabase.removeDatabase(conn_name)
+        ops = DBOperations()
+        success_count = ops.process_materials_report(materials_list)
 
         QMessageBox.information(self, "Éxito", f"Se agregaron {success_count} registros correctamente.")
         self.accept()
