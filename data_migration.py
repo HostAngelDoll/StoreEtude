@@ -80,7 +80,7 @@ class DataMigrator(QObject):
                 query = QSqlQuery(db_year)
                 for row_idx in range(4, sheet.max_row + 1):
                     if self._cancel_requested: break
-
+                    
                     title_material = sheet.cell(row=row_idx, column=9).value
                     if not title_material: continue
 
@@ -168,14 +168,14 @@ class DataMigrator(QObject):
                 if has_data:
                     self._confirmation_result = None
                     self.request_confirmation.emit(year, f"La tabla T_Registry del año {year} contiene datos. ¿Desea borrarlos y migrar?")
-
+                    
                     import time
                     from PyQt6.QtCore import QCoreApplication
                     while self._confirmation_result is None:
                         QCoreApplication.processEvents()
                         time.sleep(0.01)
                         if self._cancel_requested: break
-
+                    
                     if not self._confirmation_result:
                         db_year.close()
                         QSqlDatabase.removeDatabase(db_year_conn_name)

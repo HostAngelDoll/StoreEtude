@@ -265,13 +265,13 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Migrando recursos...", "Cancelar", 0, 100, self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-
+        
         migrator.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         migrator.log_message.connect(self.log)
         progress.canceled.connect(migrator.cancel)
-
+        
         migrator.migrate_resources()
-
+        
         self.resources_tab.model.select()
         if not progress.wasCanceled():
             QMessageBox.information(self, "Migración", "Proceso de migración de recursos finalizado.")
@@ -281,21 +281,21 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Migrando registros...", "Cancelar", 0, 100, self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-
+        
         migrator.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         migrator.log_message.connect(self.log)
         progress.canceled.connect(migrator.cancel)
-
+        
         def handle_confirmation(year, message):
-            reply = QMessageBox.question(self, "Advertencia",
+            reply = QMessageBox.question(self, "Advertencia", 
                 message + " Se recomienda hacer un respaldo manual antes.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             migrator.set_confirmation_result(reply == QMessageBox.StandardButton.Yes)
-
+            
         migrator.request_confirmation.connect(handle_confirmation)
-
+        
         migrator.migrate_registry()
-
+        
         self.registry_tab.model.select()
         if not progress.wasCanceled():
             QMessageBox.information(self, "Migración", "Proceso de migración de registros finalizado.")
@@ -312,13 +312,13 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Regenerando índices...", "Cancelar", 0, len(years), self)
         progress.setWindowTitle("Procesando años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-
+        
         ops.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         ops.log_message.connect(self.log)
         progress.canceled.connect(ops.cancel)
-
+        
         ops.regenerate_registry_index(years)
-
+        
         self.registry_tab.model.select()
         if not progress.wasCanceled():
             QMessageBox.information(self, "Regenerar Índice", "Proceso finalizado.")
@@ -353,12 +353,12 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Escaneando y vinculando recursos...", "Cancelar", 0, len(years), self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-
+        
         scanner.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         scanner.log_message.connect(self.log)
         scanner.warning_emitted.connect(lambda t, m: QMessageBox.warning(self, t, m))
         progress.canceled.connect(scanner.cancel)
-
+        
         scanner.scan_and_link_resources(years, overwrite)
         self.resources_tab.model.select()
 

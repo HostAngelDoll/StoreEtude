@@ -103,7 +103,7 @@ class DBOperations(QObject):
             upd.prepare("UPDATE T_Registry SET lapsed_calculated = ? WHERE idx = ?")
             upd.addBindValue(lapsed); upd.addBindValue(idx)
             upd.exec()
-
+        
         self.finished.emit("Lapsos recalculados.")
 
     def recalculate_registry_models(self, db_conn_name):
@@ -161,7 +161,7 @@ class DBOperations(QObject):
             type_repeat = mat['type_repeat']
             type_listen = mat['type_listen']
             model_writer = mat['model_writer']
-
+            
             # Find year for this season
             db_global = QSqlDatabase.database("global_db")
             q = QSqlQuery(db_global)
@@ -170,12 +170,12 @@ class DBOperations(QObject):
             year = None
             if q.exec() and q.next():
                 year = q.value(0)
-
+            
             if not year: continue
 
             lapsed = calculate_lapsed(dt)
             op_model, op_name = get_opener_model_info(dt, model_writer)
-
+            
             records_to_add.append({
                 'year': year,
                 'data': (title, dt, type_repeat, type_listen, model_writer, lapsed, op_model, op_name)
@@ -193,12 +193,12 @@ class DBOperations(QObject):
         for year, rows in by_year.items():
             db_path = get_yearly_db_path(year)
             if not os.path.exists(db_path): continue
-
+            
             conn_name = f"report_db_{year}"
             db = QSqlDatabase.addDatabase("QSQLITE", conn_name)
             db.setDatabaseName(db_path)
             if not db.open(): continue
-
+                
             query = QSqlQuery(db)
             db.transaction()
             for row in rows:
@@ -211,10 +211,10 @@ class DBOperations(QObject):
                 """)
                 for val in row:
                     query.addBindValue(val)
-
+                
                 if query.exec():
                     success_count += 1
-
+            
             db.commit()
             db.close()
             QSqlDatabase.removeDatabase(conn_name)

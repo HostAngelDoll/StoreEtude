@@ -87,17 +87,17 @@ class ResourceScanner(QObject):
                 for s in [si for si in seasons_info if not si['is_spinoff']]:
                     if self._cancel_requested: break
                     self.process_season_episodes(db_year, master_path, type_ids, s, overwrite, False)
-
+                
                 self.log_message.emit(f"--- Fase 2: Episodios Spinoff ({year}) ---", False, "resources")
                 for s in [si for si in seasons_info if si['is_spinoff']]:
                     if self._cancel_requested: break
                     self.process_season_episodes(db_year, master_path, type_ids, s, overwrite, True)
-
+                
                 self.log_message.emit(f"--- Fase 3: Películas y Especiales ({year}) ---", False, "resources")
                 for s in seasons_info:
                     if self._cancel_requested: break
                     self.process_movies(db_year, master_path, type_ids, s, overwrite)
-
+                
                 self.log_message.emit(f"--- Fase 4: Soundtracks y Letras ({year}) ---", False, "resources")
                 if not self._cancel_requested:
                     self.process_soundtracks(db_year, master_path, type_ids, overwrite)
