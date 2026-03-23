@@ -42,7 +42,6 @@ class PrecureManagerApp(QMainWindow):
             self.setGeometry(100, 100, 1200, 800)
 
         self.apply_theme(self.config.get("ui.theme", "Fusion"))
-        self.init_db_connections()
         self.init_actions()
 
         central_widget = QWidget()
@@ -80,6 +79,10 @@ class PrecureManagerApp(QMainWindow):
         self.tabs.addTab(self.global_tab_container, "Global")
 
         self.init_menu_bar()
+        # init_db_connections depends on year_tree (via get_current_year),
+        # so it must be called AFTER init_sidebar() and BEFORE load_settings()
+        # which might rely on DB connections being active for model selection.
+        self.init_db_connections()
         self.load_settings()
 
     def apply_theme(self, theme_name):
@@ -471,6 +474,8 @@ class PrecureManagerApp(QMainWindow):
             QMessageBox.critical(self, "Error", f"No se pudo abrir la base de datos del año {year}.")
 
     def get_current_year(self):
+        if not hasattr(self, 'year_tree'):
+            return 2004
         index = self.year_tree.currentIndex()
         return int(index.data()) if index.isValid() else 2004
 
