@@ -122,6 +122,8 @@ class DataMigrator(QObject):
                     else:
                         self.log_message.emit(f"Error al migrar recurso {final_title}: {query.lastError().text()}", True, "resources")
 
+                query = None
+                q_titles = None
                 db_year.close()
                 QSqlDatabase.removeDatabase(db_year_conn_name)
             except Exception as e:
@@ -219,6 +221,8 @@ class DataMigrator(QObject):
                     else:
                         self.log_message.emit(f"Error al migrar registro {title_material}: {query.lastError().text()}", True, "registry")
 
+                query = None
+                q_check = None
                 db_year.close()
                 QSqlDatabase.removeDatabase(db_year_conn_name)
             except Exception as e:

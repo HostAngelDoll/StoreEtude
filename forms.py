@@ -88,8 +88,6 @@ class DatabaseForm(QDialog):
                 
                 # Ensure the relational model is populated
                 rel_model.select()
-                while rel_model.canFetchMore():
-                    rel_model.fetchMore()
                 
                 # Add a blank entry to the combo box by using a proxy or manual addition
                 # Since we want to use the model, we can add the item manually and handle indices
@@ -292,15 +290,19 @@ class ReportMaterialsDialog(QDialog):
         return super().eventFilter(source, event)
 
     def handle_paste(self):
+        index = self.view.currentIndex()
+        if not index.isValid() or index.column() != 0:
+            return
+
         clipboard = QApplication.clipboard()
         text = clipboard.text()
         if not text:
             return
 
         lines = text.splitlines()
-        current_row = self.view.currentIndex().row()
+        current_row = index.row()
         if current_row < 0:
-            current_row = self.model.rowCount()
+            current_row = 0
 
         for i, line in enumerate(lines):
             row_to_fill = current_row + i
@@ -310,6 +312,7 @@ class ReportMaterialsDialog(QDialog):
             self.model.setData(self.model.index(row_to_fill, 0), line.strip())
 
     def process_addition(self):
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         from db_operations import DBOperations
         
         materials_list = []
@@ -319,6 +322,16 @@ class ReportMaterialsDialog(QDialog):
             title = self.model.data(self.model.index(r, 4))
             
             if not dt or not season or not title:
+                continue
+
+            # Datetime validation
+            try:
+                # Expected format: "2023-01-01 03:07:00-03:32:00"
+                # We validate the first part which is a standard datetime
+                parts = str(dt).strip().split(' ')
+                if len(parts) < 2: raise ValueError()
+                datetime.strptime(parts[0], "%Y-%m-%d")
+            except:
                 continue
                 
             materials_list.append({
@@ -337,6 +350,7 @@ class ReportMaterialsDialog(QDialog):
         ops = DBOperations()
         success_count = ops.process_materials_report(materials_list)
 
+        QApplication.restoreOverrideCursor()
         QMessageBox.information(self, "Éxito", f"Se agregaron {success_count} registros correctamente.")
         self.accept()
 
@@ -349,12 +363,18 @@ class SpinoffDelegate(QStyledItemDelegate):
 
     def setEditorData(self, editor, index):
         val = index.data(Qt.ItemDataRole.EditRole)
-        idx = editor.findData(1 if val == "Sí" else 0)
+        # Normalization: handle both int/bool and "Sí"/"No" string values
+        if isinstance(val, str):
+            int_val = 1 if val == "Sí" else 0
+        else:
+            int_val = int(val or 0)
+
+        idx = editor.findData(int_val)
         editor.setCurrentIndex(idx if idx >= 0 else 0)
 
     def setModelData(self, editor, model, index):
         old_val = model.data(index, Qt.ItemDataRole.EditRole)
-        new_val = editor.currentText()
+        new_val = editor.currentText() # Stores as string "Sí"/"No" for standard staging model consistency
         model.setData(index, new_val, Qt.ItemDataRole.EditRole)
         if old_val != new_val:
             # Clear season, type_resource and title_material if is_spinoff changed
@@ -417,6 +437,8 @@ class TypeResourceDelegate(QStyledItemDelegate):
             model.setData(model.index(index.row(), 4), "", Qt.ItemDataRole.EditRole)
 
 class TitleMaterialDelegate(QStyledItemDelegate):
+    _db_cache = {}
+
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
         editor.addItem("", None)
@@ -431,13 +453,9 @@ class TitleMaterialDelegate(QStyledItemDelegate):
         q.addBindValue(season)
         if q.exec() and q.next():
             year = q.value(0)
-            from db_manager import get_yearly_db_path
-            db_path = get_yearly_db_path(year)
             
-            conn_name = f"tmp_title_db_{year}"
-            db_year = QSqlDatabase.addDatabase("QSQLITE", conn_name)
-            db_year.setDatabaseName(db_path)
-            if db_year.open():
+            db_year = self._get_cached_db(year)
+            if db_year and db_year.isOpen():
                 qy = QSqlQuery(db_year)
 
                 sql = "SELECT title_material FROM T_Resources WHERE precure_season_name = ?"
@@ -460,10 +478,27 @@ class TitleMaterialDelegate(QStyledItemDelegate):
                 if qy.exec():
                     while qy.next():
                         editor.addItem(qy.value(0))
-                db_year.close()
-            QSqlDatabase.removeDatabase(conn_name)
             
         return editor
+
+    def _get_cached_db(self, year):
+        conn_name = f"cached_title_db_{year}"
+        if conn_name in self._db_cache:
+            db = self._db_cache[conn_name]
+            if db.isOpen():
+                return db
+
+        from db_manager import get_yearly_db_path
+        db_path = get_yearly_db_path(year)
+        if not os.path.exists(db_path):
+            return None
+
+        db = QSqlDatabase.addDatabase("QSQLITE", conn_name)
+        db.setDatabaseName(db_path)
+        if db.open():
+            self._db_cache[conn_name] = db
+            return db
+        return None
 
     def setEditorData(self, editor, index):
         val = index.data(Qt.ItemDataRole.EditRole)
@@ -586,7 +621,8 @@ class SettingsDialog(QDialog):
 
         self.tg_status_label = QLabel("No conectado")
         self.btn_tg_connect = QPushButton("Conectar")
-        self.btn_tg_connect.clicked.connect(self.on_tg_connect_clicked)
+        self.btn_tg_connect.clicked.connect(self.on_tg_main_btn_clicked)
+        self._tg_connected = False
 
         tg_conn_layout = QHBoxLayout()
         tg_conn_layout.addWidget(self.tg_status_label)
@@ -623,25 +659,19 @@ class SettingsDialog(QDialog):
         self.tg_manager.auth_required.connect(self.handle_tg_auth)
         self.tg_manager.chats_loaded.connect(self.show_chat_selection)
 
-    def on_tg_connect_clicked(self):
-        # Save current API credentials first
-        self.config.set("telegram.api_id", self.api_id_edit.text(), save=False)
-        self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=True)
-        self.tg_manager.connect()
+    def on_tg_main_btn_clicked(self):
+        if self._tg_connected:
+            self.tg_manager.disconnect()
+        else:
+            # Save current API credentials first
+            self.config.set("telegram.api_id", self.api_id_edit.text(), save=False)
+            self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=True)
+            self.tg_manager.connect()
 
     def update_tg_status(self, message, connected):
         self.tg_status_label.setText(message)
-        try:
-            self.btn_tg_connect.clicked.disconnect()
-        except TypeError:
-            pass # Not connected
-
-        if connected:
-            self.btn_tg_connect.setText("Desconectar")
-            self.btn_tg_connect.clicked.connect(self.tg_manager.disconnect)
-        else:
-            self.btn_tg_connect.setText("Conectar")
-            self.btn_tg_connect.clicked.connect(self.on_tg_connect_clicked)
+        self._tg_connected = connected
+        self.btn_tg_connect.setText("Desconectar" if connected else "Conectar")
 
     def handle_tg_auth(self, type):
         if type == "phone":
@@ -655,9 +685,11 @@ class SettingsDialog(QDialog):
             if ok: self.tg_manager.submit_password(pw)
 
     def on_select_chat_clicked(self):
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         self.tg_manager.fetch_chats()
 
     def show_chat_selection(self, chats):
+        QApplication.restoreOverrideCursor()
         dialog = ChatSelectionDialog(chats, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             chat = dialog.get_selected_chat()
@@ -840,11 +872,13 @@ class TelegramDownloadDialog(QDialog):
     def fetch_latest_videos(self):
         chat_id = self.config.get("telegram.chat_id")
         if chat_id:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             self.tg_manager.fetch_videos(chat_id, limit=5)
         else:
             QMessageBox.warning(self, "Telegram", "No se ha seleccionado un chat de destino en Configuración.")
 
     def populate_videos(self, videos):
+        QApplication.restoreOverrideCursor()
         # Clear current
         while self.video_list_layout.count():
             item = self.video_list_layout.takeAt(0)
@@ -929,7 +963,8 @@ class TelegramDownloadDialog(QDialog):
                 try:
                     files = [f for f in os.listdir(full_path) if os.path.isfile(os.path.join(full_path, f))]
                     if files:
-                        self.first_file_label.setText(sorted(files)[0])
+                        files.sort(key=lambda f: os.path.getmtime(os.path.join(full_path, f)))
+                        self.first_file_label.setText(files[0])
                     else:
                         self.first_file_label.setText("Vacia")
                 except Exception as e:
