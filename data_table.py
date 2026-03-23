@@ -918,6 +918,49 @@ class DataTableTab(QWidget):
     def set_auto_resize(self, enabled):
         self.apply_column_configs()
 
+    def resize_to_contents(self):
+        if not self.view: return
+        self.view.resizeColumnsToContents()
+        # Save these new widths
+        header = self.view.horizontalHeader()
+        from config_manager import ConfigManager
+        config = ConfigManager()
+        for i in range(self.model.columnCount()):
+            col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
+            config.set_column_config(self.table_name, col_name, width=header.sectionSize(i), save=False)
+        config.save()
+
+    def lock_all_columns(self):
+        if not self.model: return
+        from config_manager import ConfigManager
+        config = ConfigManager()
+        header = self.view.horizontalHeader()
+        for i in range(self.model.columnCount()):
+            col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
+            # Only lock if not already locked
+            col_config = config.get_column_config(self.table_name, col_name)
+            if not col_config.get("locked", False):
+                config.set_column_config(self.table_name, col_name,
+                                         width=header.sectionSize(i),
+                                         locked=True, save=False)
+        config.save()
+        self.apply_column_configs()
+
+    def unlock_all_columns(self):
+        if not self.model: return
+        from config_manager import ConfigManager
+        config = ConfigManager()
+        header = self.view.horizontalHeader()
+        for i in range(self.model.columnCount()):
+            col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
+            col_config = config.get_column_config(self.table_name, col_name)
+            if col_config.get("locked", False):
+                config.set_column_config(self.table_name, col_name,
+                                         width=header.sectionSize(i),
+                                         locked=False, save=False)
+        config.save()
+        self.apply_column_configs()
+
     def apply_column_configs(self):
         if not self.model:
             return

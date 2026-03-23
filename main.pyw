@@ -218,6 +218,15 @@ class PrecureManagerApp(QMainWindow):
         self.auto_resize_action.setChecked(True)
         self.auto_resize_action.triggered.connect(self.set_auto_resize_columns)
 
+        self.resize_to_contents_action = QAction("Ajustar anchos al contenido", self)
+        self.resize_to_contents_action.triggered.connect(self.on_resize_to_contents_requested)
+
+        self.lock_all_columns_action = QAction("Bloquear todos los anchos desbloqueados", self)
+        self.lock_all_columns_action.triggered.connect(self.on_lock_all_columns_requested)
+
+        self.unlock_all_columns_action = QAction("Desbloquear todos los anchos bloqueados", self)
+        self.unlock_all_columns_action.triggered.connect(self.on_unlock_all_columns_requested)
+
         # Ayuda
         self.about_action = QAction("Acerca de", self)
         self.about_action.triggered.connect(lambda: QMessageBox.information(self, "Ayuda", "Precure Media Manager v1.0"))
@@ -262,6 +271,10 @@ class PrecureManagerApp(QMainWindow):
         log_types_menu.addAction(self.show_construction_logs)
 
         view_menu.addAction(self.auto_resize_action)
+        view_menu.addSeparator()
+        view_menu.addAction(self.resize_to_contents_action)
+        view_menu.addAction(self.lock_all_columns_action)
+        view_menu.addAction(self.unlock_all_columns_action)
 
         help_menu = menubar.addMenu("Ayuda")
         help_menu.addAction(self.about_action)
@@ -488,6 +501,21 @@ class PrecureManagerApp(QMainWindow):
             return 2004
         index = self.year_tree.currentIndex()
         return int(index.data()) if index.isValid() else 2004
+
+    def on_resize_to_contents_requested(self):
+        tab = self.get_active_data_tab()
+        if tab:
+            tab.resize_to_contents()
+
+    def on_lock_all_columns_requested(self):
+        tab = self.get_active_data_tab()
+        if tab:
+            tab.lock_all_columns()
+
+    def on_unlock_all_columns_requested(self):
+        tab = self.get_active_data_tab()
+        if tab:
+            tab.unlock_all_columns()
 
     def on_settings_requested(self):
         dialog = SettingsDialog(self)
