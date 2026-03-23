@@ -826,6 +826,7 @@ class TelegramDownloadDialog(QDialog):
 
         # Internal state
         self.video_items = [] # List of (checkbox, message_dict, rename_checkbox, rename_input)
+        self._apply_to_all_choice = None # (choice, rename_pattern)
 
         # Connect TG signals
         self.tg_manager.videos_loaded.connect(self.populate_videos)
@@ -945,6 +946,7 @@ class TelegramDownloadDialog(QDialog):
             QMessageBox.warning(self, "Descarga", "No hay videos seleccionados.")
             return
 
+        self._apply_to_all_choice = None
         self.btn_download.setEnabled(False)
         self.download_next()
 
@@ -990,6 +992,50 @@ class TelegramDownloadDialog(QDialog):
                 filename += ext
 
         dest_path = os.path.join(dest_folder, filename)
+
+        # Conflict Handling
+        if os.path.exists(dest_path):
+            choice = self._apply_to_all_choice
+            if choice is None:
+                msg = f"El archivo '{filename}' ya existe.\n¿Qué deseas hacer?"
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("Archivo existente")
+                msg_box.setText(msg)
+                msg_box.setWindowIcon(QIcon(r"img\icon.ico"))
+
+                over_btn = msg_box.addButton("Sobrescribir", QMessageBox.ButtonRole.ActionRole)
+                skip_btn = msg_box.addButton("Omitir", QMessageBox.ButtonRole.ActionRole)
+                ren_btn = msg_box.addButton("Mantener ambos (renombrar)", QMessageBox.ButtonRole.ActionRole)
+                cancel_btn = msg_box.addButton("Cancelar todo", QMessageBox.ButtonRole.RejectRole)
+
+                apply_all_cb = QCheckBox("Aplicar a todo")
+                msg_box.setCheckBox(apply_all_cb)
+
+                msg_box.exec()
+
+                if msg_box.clickedButton() == cancel_btn:
+                    self.to_download = []
+                    self.btn_download.setEnabled(True)
+                    return
+                elif msg_box.clickedButton() == over_btn:
+                    choice = "overwrite"
+                elif msg_box.clickedButton() == skip_btn:
+                    choice = "skip"
+                elif msg_box.clickedButton() == ren_btn:
+                    choice = "rename"
+
+                if apply_all_cb.isChecked():
+                    self._apply_to_all_choice = choice
+
+            if choice == "skip":
+                self.download_next()
+                return
+            elif choice == "rename":
+                base, ext = os.path.splitext(filename)
+                counter = 1
+                while os.path.exists(os.path.join(dest_folder, f"{base}_{counter}{ext}")):
+                    counter += 1
+                dest_path = os.path.join(dest_folder, f"{base}_{counter}{ext}")
 
         chat_id = self.config.get("telegram.chat_id")
         self.tg_manager.download_video(chat_id, video['id'], dest_path)
