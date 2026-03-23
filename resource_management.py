@@ -1,6 +1,7 @@
 import os
 import re
 import subprocess
+import time
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal, QCoreApplication
 from PyQt6.QtSql import QSqlDatabase, QSqlQuery
@@ -11,6 +12,7 @@ class ResourceScanner(QObject):
     log_message = pyqtSignal(str, bool, str)
     finished = pyqtSignal()
     warning_emitted = pyqtSignal(str, str) # title, message
+    request_duplicate_action = pyqtSignal(str) # title_material. Handled by UI.
 
     def __init__(self):
         super().__init__()
@@ -261,6 +263,173 @@ class ResourceScanner(QObject):
                 upd.addBindValue(dt_str)
                 upd.addBindValue(title)
                 upd.exec()
+
+    def scan_new_soundtracks_lyrics(self, years):
+        if not os.path.exists(BASE_DIR_PATH):
+            return
+
+        db_global = QSqlDatabase.database("global_db")
+        type_ids = {}
+        q = QSqlQuery(db_global)
+        q.exec("SELECT idx, type_resource FROM T_Type_Resources")
+        while q.next():
+            type_ids[q.value(1)] = q.value(0)
+
+        sd_type_id = type_ids.get("Soundtrack")
+        self._duplicate_choice = None
+        self._apply_all_duplicate = False
+        self._last_action = 0
+
+        for i, year in enumerate(years):
+            if self._cancel_requested:
+                break
+
+            self.progress_changed.emit(i, len(years), f"Procesando año {year}...")
+            self.log_message.emit(f"Buscando nuevas soundtracks para el año {year}...", False, "resources")
+
+            # Get main season
+            season_name = None
+            sq = QSqlQuery(db_global)
+            sq.prepare("SELECT precure_season_name, path_master FROM T_Seasons WHERE year = ? AND is_spinoff = 0")
+            sq.addBindValue(year)
+            if sq.exec() and sq.next():
+                season_name = sq.value(0)
+                path_master = sq.value(1)
+            else:
+                continue
+
+            master_path = os.path.join(BASE_DIR_PATH, str(year), path_master or "")
+            if not os.path.exists(master_path):
+                continue
+
+            sd_folder_name = None
+            ly_folder_name = None
+            for item in os.listdir(master_path):
+                if os.path.isdir(os.path.join(master_path, item)):
+                    if "soundtrack" in item.lower():
+                        sd_folder_name = item
+                    elif "lyrics" in item.lower():
+                        ly_folder_name = item
+
+            if not sd_folder_name or not ly_folder_name:
+                self.log_message.emit(f"Año {year}: No se encontraron ambas carpetas (soundtrack y lyrics).", True, "resources")
+                continue
+
+            sd_folder = os.path.join(master_path, sd_folder_name)
+            ly_folder = os.path.join(master_path, ly_folder_name)
+
+            db_year_conn = f"scan_sd_db_{year}"
+            db_year_path = get_yearly_db_path(year)
+            db_year = QSqlDatabase.addDatabase("QSQLITE", db_year_conn)
+            db_year.setDatabaseName(db_year_path)
+            if not db_year.open():
+                continue
+
+            try:
+                sd_files = {os.path.splitext(f)[0]: f for f in os.listdir(sd_folder) if self.is_valid_file(f, ('.mp3', '.mp4', '.m4a'))}
+                ly_files = {os.path.splitext(f)[0]: f for f in os.listdir(ly_folder) if self.is_valid_file(f)}
+
+                common_names = set(sd_files.keys()) & set(ly_files.keys())
+
+                for title in sorted(common_names):
+                    if self._cancel_requested: break
+
+                    # Check if already exists
+                    check_q = QSqlQuery(db_year)
+                    check_q.prepare("SELECT COUNT(*) FROM T_Resources WHERE title_material = ?")
+                    check_q.addBindValue(title)
+                    exists = False
+                    if check_q.exec() and check_q.next():
+                        exists = check_q.value(0) > 0
+
+                    action = 0 # 0: Omit, 1: Update Paths, 2: Replace
+                    if exists:
+                        if self._apply_all_duplicate:
+                            action = self._last_action
+                        else:
+                            self._duplicate_choice = None
+                            self.request_duplicate_action.emit(title)
+
+                            while self._duplicate_choice is None:
+                                QCoreApplication.processEvents()
+                                time.sleep(0.01)
+                                if self._cancel_requested: break
+
+                            if self._duplicate_choice is None:
+                                break
+
+                            action, self._apply_all_duplicate = self._duplicate_choice
+                            self._last_action = action
+
+                        if action == 0: # Omit
+                            self.log_message.emit(f"Omitiendo duplicado: {title}", False, "resources")
+                            continue
+
+                    filename_sd = sd_files[title]
+                    filename_ly = ly_files[title]
+                    full_path_sd = os.path.join(sd_folder, filename_sd)
+                    duration = self.get_file_duration(full_path_sd)
+                    dt_str = datetime.fromtimestamp(os.path.getmtime(full_path_sd)).strftime('%Y-%m-%d %H:%M:%S')
+
+                    if not exists:
+                        self.log_message.emit(f"Añadiendo nueva soundtrack: {title}", False, "resources")
+                        ins = QSqlQuery(db_year)
+                        ins.prepare("""
+                            INSERT INTO T_Resources (
+                                title_material, type_material, precure_season_name,
+                                duration_file, datetime_download,
+                                relative_path_of_soundtracks, relative_path_of_lyrics
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """)
+                        ins.addBindValue(title)
+                        ins.addBindValue(sd_type_id)
+                        ins.addBindValue(season_name)
+                        ins.addBindValue(duration)
+                        ins.addBindValue(dt_str)
+                        ins.addBindValue(f"{sd_folder_name}/{filename_sd}")
+                        ins.addBindValue(f"{ly_folder_name}/{filename_ly}")
+                        if not ins.exec():
+                            self.log_message.emit(f"Error al insertar {title}: {ins.lastError().text()}", True, "resources")
+                    else:
+                        if action == 1: # Update Paths
+                            self.log_message.emit(f"Actualizando rutas de soundtrack: {title}", False, "resources")
+                            upd = QSqlQuery(db_year)
+                            upd.prepare("UPDATE T_Resources SET relative_path_of_soundtracks = ?, relative_path_of_lyrics = ? WHERE title_material = ?")
+                            upd.addBindValue(f"{sd_folder_name}/{filename_sd}")
+                            upd.addBindValue(f"{ly_folder_name}/{filename_ly}")
+                            upd.addBindValue(title)
+                            upd.exec()
+                        elif action == 2: # Replace
+                            self.log_message.emit(f"Reemplazando metadatos de soundtrack: {title}", False, "resources")
+                            upd = QSqlQuery(db_year)
+                            upd.prepare("""
+                                UPDATE T_Resources SET
+                                    type_material = ?, precure_season_name = ?,
+                                    duration_file = ?, datetime_download = ?,
+                                    relative_path_of_soundtracks = ?, relative_path_of_lyrics = ?,
+                                    relative_path_of_file = NULL
+                                WHERE title_material = ?
+                            """)
+                            upd.addBindValue(sd_type_id)
+                            upd.addBindValue(season_name)
+                            upd.addBindValue(duration)
+                            upd.addBindValue(dt_str)
+                            upd.addBindValue(f"{sd_folder_name}/{filename_sd}")
+                            upd.addBindValue(f"{ly_folder_name}/{filename_ly}")
+                            upd.addBindValue(title)
+                            upd.exec()
+
+            except Exception as e:
+                self.log_message.emit(f"Error año {year}: {e}", True, "resources")
+            finally:
+                db_year.close()
+                QSqlDatabase.removeDatabase(db_year_conn)
+
+        self.progress_changed.emit(len(years), len(years), "Búsqueda completada.")
+        self.finished.emit()
+
+    def set_duplicate_choice(self, choice, apply_all):
+        self._duplicate_choice = (choice, apply_all)
 
     def process_soundtracks(self, db, master_path, type_ids, overwrite):
         sd_types = ["Soundtrack", "Soundtrack Sp"]
