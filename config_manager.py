@@ -44,7 +44,8 @@ class ConfigManager:
                 "console_visible": True,
                 "auto_resize": True,
                 "show_construction_logs": False,
-                "theme": "Fusion"
+                "theme": "Fusion",
+                "column_configs": {} # table_name -> {col_name -> {"width": int, "locked": bool}}
             }
         }
         self.load()
@@ -84,6 +85,26 @@ class ConfigManager:
             else:
                 return default
         return val
+
+    def get_column_config(self, table_name, col_name):
+        configs = self.get("ui.column_configs", {})
+        table_config = configs.get(table_name, {})
+        return table_config.get(col_name, {"width": 100, "locked": False})
+
+    def set_column_config(self, table_name, col_name, width=None, locked=None, save=True):
+        configs = self.get("ui.column_configs", {})
+        if table_name not in configs:
+            configs[table_name] = {}
+
+        if col_name not in configs[table_name]:
+            configs[table_name][col_name] = {"width": 100, "locked": False}
+
+        if width is not None:
+            configs[table_name][col_name]["width"] = width
+        if locked is not None:
+            configs[table_name][col_name]["locked"] = locked
+
+        self.set("ui.column_configs", configs, save=save)
 
     def set(self, key, value, save=True):
         keys = key.split('.')
