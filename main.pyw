@@ -10,13 +10,14 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTabWidget, QLabel, QHBoxLayout, QTreeView,
                              QDockWidget, QDialog, QMessageBox, QMenuBar, QMenu,
                              QProgressDialog)
-from PyQt6.QtCore import Qt, QSettings
+from PyQt6.QtCore import Qt, QSettings, QByteArray
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon
 from PyQt6.QtSql import QSqlDatabase, QSqlQuery
 import openpyxl
 
-from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path, BASE_DIR_PATH
-from forms import DatabaseForm, YearRangeDialog, ReportMaterialsDialog
+from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path, BASE_DIR_PATH, refresh_config_paths
+from forms import DatabaseForm, YearRangeDialog, ReportMaterialsDialog, SettingsDialog
+from config_manager import ConfigManager
 from data_table import DataTableTab
 
 # Domain Logic Imports
@@ -29,18 +30,20 @@ class PrecureManagerApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Precure Media Manager - Core System")
         self.setWindowIcon(QIcon(r"img\icon.ico"))
-        self.settings = QSettings("MyCompany", "PrecureMediaManager")
+        self.config = ConfigManager()
 
-        geometry = self.settings.value("geometry")
+        geometry = self.config.get("ui.geometry")
         if geometry:
-            self.restoreGeometry(geometry)
+            try:
+                self.restoreGeometry(QByteArray.fromBase64(geometry.encode()))
+            except:
+                self.setGeometry(100, 100, 1200, 800)
         else:
             self.setGeometry(100, 100, 1200, 800)
 
+        self.apply_theme(self.config.get("ui.theme", "Fusion"))
         self.init_db_connections()
         self.init_actions()
-        # Pre-load only non-UI dependent settings
-        self.show_construction_logs.setChecked(self.settings.value("show_construction_logs", False, type=bool))
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -79,31 +82,55 @@ class PrecureManagerApp(QMainWindow):
         self.init_menu_bar()
         self.load_settings()
 
+    def apply_theme(self, theme_name):
+        if theme_name == "Dark":
+            QApplication.instance().setStyle("Fusion")
+            from PyQt6.QtGui import QPalette, QColor
+            palette = QPalette()
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Window, QColor(53, 53, 53))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Base, QColor(25, 25, 25))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.ToolTipText, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Text, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Button, QColor(53, 53, 53))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Link, QColor(42, 130, 218))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
+            QApplication.instance().setPalette(palette)
+        else:
+            QApplication.instance().setStyle(theme_name)
+            if QApplication.instance().style():
+                QApplication.instance().setPalette(QApplication.instance().style().standardPalette())
+
     def closeEvent(self, event):
         self.save_settings()
         super().closeEvent(event)
 
     def save_settings(self):
-        self.settings.setValue("geometry", self.saveGeometry())
-        self.settings.setValue("sidebar_visible", self.toggle_sidebar.isChecked())
-        self.settings.setValue("console_visible", self.toggle_console.isChecked())
-        self.settings.setValue("auto_resize", self.auto_resize_action.isChecked())
-        self.settings.setValue("show_construction_logs", self.show_construction_logs.isChecked())
+        self.config.set("ui.geometry", self.saveGeometry().toBase64().data().decode())
+        self.config.set("ui.sidebar_visible", self.toggle_sidebar.isChecked())
+        self.config.set("ui.console_visible", self.toggle_console.isChecked())
+        self.config.set("ui.auto_resize", self.auto_resize_action.isChecked())
+        self.config.set("ui.show_construction_logs", self.show_construction_logs.isChecked())
 
     def load_settings(self):
-        sidebar_visible = self.settings.value("sidebar_visible", True, type=bool)
+        sidebar_visible = self.config.get("ui.sidebar_visible", True)
         self.toggle_sidebar.setChecked(sidebar_visible)
         self.dock.setVisible(sidebar_visible)
 
-        console_visible = self.settings.value("console_visible", True, type=bool)
+        console_visible = self.config.get("ui.console_visible", True)
         self.toggle_console.setChecked(console_visible)
         self.toggle_sql_consoles()
 
-        auto_resize = self.settings.value("auto_resize", True, type=bool)
+        auto_resize = self.config.get("ui.auto_resize", True)
         self.auto_resize_action.setChecked(auto_resize)
         self.set_auto_resize_columns(auto_resize)
 
-        show_const_logs = self.settings.value("show_construction_logs", False, type=bool)
+        show_const_logs = self.config.get("ui.show_construction_logs", False)
         self.show_construction_logs.setChecked(show_const_logs)
 
     def set_auto_resize_columns(self, enabled):
@@ -122,6 +149,9 @@ class PrecureManagerApp(QMainWindow):
 
         self.import_action = QAction("Importar tabla desde CSV", self)
         self.import_action.triggered.connect(self.import_active_tab_from_csv)
+
+        self.config_action = QAction("Configuración", self)
+        self.config_action.triggered.connect(self.on_settings_requested)
 
         self.exit_action = QAction("Salir", self)
         self.exit_action.triggered.connect(self.close)
@@ -191,6 +221,9 @@ class PrecureManagerApp(QMainWindow):
         file_menu.addAction(self.save_action)
         file_menu.addAction(self.export_action)
         file_menu.addAction(self.import_action)
+        file_menu.addSeparator()
+        file_menu.addAction(self.config_action)
+        file_menu.addSeparator()
         file_menu.addAction(self.exit_action)
 
         edit_menu = menubar.addMenu("Edición")
@@ -265,13 +298,13 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Migrando recursos...", "Cancelar", 0, 100, self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-        
+
         migrator.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         migrator.log_message.connect(self.log)
         progress.canceled.connect(migrator.cancel)
-        
+
         migrator.migrate_resources()
-        
+
         self.resources_tab.model.select()
         if not progress.wasCanceled():
             QMessageBox.information(self, "Migración", "Proceso de migración de recursos finalizado.")
@@ -281,21 +314,21 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Migrando registros...", "Cancelar", 0, 100, self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-        
+
         migrator.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         migrator.log_message.connect(self.log)
         progress.canceled.connect(migrator.cancel)
-        
+
         def handle_confirmation(year, message):
-            reply = QMessageBox.question(self, "Advertencia", 
+            reply = QMessageBox.question(self, "Advertencia",
                 message + " Se recomienda hacer un respaldo manual antes.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             migrator.set_confirmation_result(reply == QMessageBox.StandardButton.Yes)
-            
+
         migrator.request_confirmation.connect(handle_confirmation)
-        
+
         migrator.migrate_registry()
-        
+
         self.registry_tab.model.select()
         if not progress.wasCanceled():
             QMessageBox.information(self, "Migración", "Proceso de migración de registros finalizado.")
@@ -312,13 +345,13 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Regenerando índices...", "Cancelar", 0, len(years), self)
         progress.setWindowTitle("Procesando años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-        
+
         ops.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         ops.log_message.connect(self.log)
         progress.canceled.connect(ops.cancel)
-        
+
         ops.regenerate_registry_index(years)
-        
+
         self.registry_tab.model.select()
         if not progress.wasCanceled():
             QMessageBox.information(self, "Regenerar Índice", "Proceso finalizado.")
@@ -353,12 +386,12 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Escaneando y vinculando recursos...", "Cancelar", 0, len(years), self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-        
+
         scanner.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         scanner.log_message.connect(self.log)
         scanner.warning_emitted.connect(lambda t, m: QMessageBox.warning(self, t, m))
         progress.canceled.connect(scanner.cancel)
-        
+
         scanner.scan_and_link_resources(years, overwrite)
         self.resources_tab.model.select()
 
@@ -385,16 +418,27 @@ class PrecureManagerApp(QMainWindow):
         self.domains_tab.set_console_visible(is_visible)
 
     def init_db_connections(self):
-        if not QSqlDatabase.contains("global_db"):
-            db = QSqlDatabase.addDatabase("QSQLITE", "global_db")
-            db.setDatabaseName(GLOBAL_DB_PATH)
-            db.open()
+        from db_manager import GLOBAL_DB_PATH
 
-        if not QSqlDatabase.contains("year_db"):
-            db = QSqlDatabase.addDatabase("QSQLITE", "year_db")
-            db.setDatabaseName(get_yearly_db_path(2004))
-            if db.open():
-                QSqlQuery(db).exec(f"ATTACH DATABASE '{GLOBAL_DB_PATH}' AS global_db")
+        db_global = QSqlDatabase.database("global_db", open=False)
+        if not db_global.isValid():
+            db_global = QSqlDatabase.addDatabase("QSQLITE", "global_db")
+
+        if db_global.databaseName() != GLOBAL_DB_PATH:
+            db_global.close()
+            db_global.setDatabaseName(GLOBAL_DB_PATH)
+
+        if not db_global.isOpen():
+            db_global.open()
+
+        db_year = QSqlDatabase.database("year_db", open=False)
+        if not db_year.isValid():
+            db_year = QSqlDatabase.addDatabase("QSQLITE", "year_db")
+            db_year.setDatabaseName(get_yearly_db_path(self.get_current_year()))
+
+        if not db_year.isOpen():
+            if db_year.open():
+                QSqlQuery(db_year).exec(f"ATTACH DATABASE '{GLOBAL_DB_PATH}' AS global_db")
 
     def init_sidebar(self):
         self.dock = QDockWidget("Años", self)
@@ -419,6 +463,7 @@ class PrecureManagerApp(QMainWindow):
         db.close()
         db.setDatabaseName(db_path)
         if db.open():
+            from db_manager import GLOBAL_DB_PATH
             QSqlQuery(db).exec(f"ATTACH DATABASE '{GLOBAL_DB_PATH}' AS global_db")
             self.resources_tab.update_database("year_db")
             self.registry_tab.update_database("year_db")
@@ -428,6 +473,24 @@ class PrecureManagerApp(QMainWindow):
     def get_current_year(self):
         index = self.year_tree.currentIndex()
         return int(index.data()) if index.isValid() else 2004
+
+    def on_settings_requested(self):
+        dialog = SettingsDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Re-apply settings
+            self.config.load()
+            refresh_config_paths()
+            self.apply_theme(self.config.get("ui.theme"))
+            self.load_settings()
+            # If the DB path changed, we might need to reconnect
+            self.init_db_connections()
+            # Refresh all models because global_db might have changed
+            self.catalog_tab.model.select()
+            self.opener_tab.model.select()
+            self.type_res_tab.model.select()
+            self.seasons_tab.model.select()
+            self.domains_tab.model.select()
+            self.on_year_selected(self.year_tree.currentIndex())
 
     def log(self, message, is_error=False, target="resources"):
         if target == "resources" and hasattr(self, 'resources_tab'):

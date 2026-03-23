@@ -2,12 +2,13 @@ from PyQt6.QtWidgets import (QDialog, QFormLayout, QLineEdit, QSpinBox,
                              QCheckBox, QDialogButtonBox, QMessageBox, QComboBox,
                              QVBoxLayout, QHBoxLayout, QRadioButton, QButtonGroup,
                              QLabel, QWidget, QTableView, QStyledItemDelegate,
-                             QApplication)
+                             QApplication, QFileDialog, QGroupBox, QPushButton)
 from PyQt6.QtSql import QSqlRelationalTableModel, QSqlRelation, QSqlTableModel, QSqlQuery, QSqlDatabase
 from PyQt6.QtCore import Qt, QEvent
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QKeySequence, QIcon
 from datetime import datetime
 import os
+from config_manager import ConfigManager
 
 class DatabaseForm(QDialog):
     def __init__(self, model, row=-1, parent=None):
@@ -442,3 +443,124 @@ class CatalogDelegate(QStyledItemDelegate):
 
     def setModelData(self, editor, model, index):
         model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.config = ConfigManager()
+        self.setWindowIcon(QIcon(r"img\icon.ico"))
+        self.setWindowTitle("Configuración")
+        self.setMinimumWidth(500)
+
+        self.layout = QVBoxLayout(self)
+
+        # Paths Group
+        paths_group = QGroupBox("Rutas")
+        paths_layout = QFormLayout()
+
+        self.base_dir_edit = QLineEdit(self.config.get("base_dir_path"))
+        self.btn_browse_base = QPushButton("...")
+        self.btn_browse_base.clicked.connect(self.browse_base_dir)
+        base_h_layout = QHBoxLayout()
+        base_h_layout.addWidget(self.base_dir_edit)
+        base_h_layout.addWidget(self.btn_browse_base)
+        paths_layout.addRow("Ruta Base Recursos:", base_h_layout)
+
+        self.global_db_edit = QLineEdit(self.config.get("global_db_path"))
+        self.btn_browse_db = QPushButton("...")
+        self.btn_browse_db.clicked.connect(self.browse_global_db)
+        db_h_layout = QHBoxLayout()
+        db_h_layout.addWidget(self.global_db_edit)
+        db_h_layout.addWidget(self.btn_browse_db)
+        paths_layout.addRow("Ruta DB Global:", db_h_layout)
+
+        self.config_path_edit = QLineEdit(self.config.config_path)
+        self.config_path_edit.setReadOnly(True)
+        self.btn_move_config = QPushButton("Cambiar/Mover JSON")
+        self.btn_move_config.clicked.connect(self.move_config_json)
+        config_h_layout = QHBoxLayout()
+        config_h_layout.addWidget(self.config_path_edit)
+        config_h_layout.addWidget(self.btn_move_config)
+        paths_layout.addRow("Ubicación de Ajustes:", config_h_layout)
+
+        paths_group.setLayout(paths_layout)
+        self.layout.addWidget(paths_group)
+
+        # UI Settings Group
+        ui_group = QGroupBox("Interfaz de Usuario")
+        ui_layout = QFormLayout()
+
+        self.auto_resize_cb = QCheckBox()
+        self.auto_resize_cb.setChecked(self.config.get("ui.auto_resize", True))
+        ui_layout.addRow("Auto-ajustar columnas:", self.auto_resize_cb)
+
+        self.show_const_logs_cb = QCheckBox()
+        self.show_const_logs_cb.setChecked(self.config.get("ui.show_construction_logs", False))
+        ui_layout.addRow("Mostrar logs de construcción:", self.show_const_logs_cb)
+
+        self.show_sidebar_cb = QCheckBox()
+        self.show_sidebar_cb.setChecked(self.config.get("ui.sidebar_visible", True))
+        ui_layout.addRow("Ver panel de años:", self.show_sidebar_cb)
+
+        self.show_console_cb = QCheckBox()
+        self.show_console_cb.setChecked(self.config.get("ui.console_visible", True))
+        ui_layout.addRow("Ver consola SQL:", self.show_console_cb)
+
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItems(["Fusion", "Windows", "Dark"])
+        self.theme_combo.setCurrentText(self.config.get("ui.theme", "Fusion"))
+        ui_layout.addRow("Tema:", self.theme_combo)
+
+        ui_group.setLayout(ui_layout)
+        self.layout.addWidget(ui_group)
+
+        # Buttons
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.buttons.accepted.connect(self.validate_and_save)
+        self.buttons.rejected.connect(self.reject)
+        self.layout.addWidget(self.buttons)
+
+    def browse_base_dir(self):
+        dir_path = QFileDialog.getExistingDirectory(self, "Seleccionar Ruta Base", self.base_dir_edit.text())
+        if dir_path:
+            self.base_dir_edit.setText(dir_path)
+
+    def browse_global_db(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Seleccionar DB Global", self.global_db_edit.text(), "SQLite DB (*.db)")
+        if file_path:
+            self.global_db_edit.setText(file_path)
+
+    def move_config_json(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "Mover archivo de ajustes", self.config_path_edit.text(), "JSON (*.json)")
+        if file_path:
+            if self.config.move_config_file(file_path):
+                self.config_path_edit.setText(file_path)
+                QMessageBox.information(self, "Éxito", "Archivo de ajustes movido correctamente.")
+
+    def validate_and_save(self):
+        base_path = self.base_dir_edit.text()
+        db_path = self.global_db_edit.text()
+
+        valid_base, msg_base = ConfigManager.validate_base_dir(base_path)
+        if not valid_base:
+            res = QMessageBox.warning(self, "Validación de Ruta Base", f"{msg_base}\n¿Deseas guardar de todas formas?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if res == QMessageBox.StandardButton.No:
+                return
+
+        valid_db, msg_db = ConfigManager.validate_db_path(db_path)
+        if not valid_db:
+            res = QMessageBox.warning(self, "Validación de DB Global", f"{msg_db}\n¿Deseas guardar de todas formas?",
+                                       QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if res == QMessageBox.StandardButton.No:
+                return
+
+        self.config.set("base_dir_path", base_path, save=False)
+        self.config.set("global_db_path", db_path, save=False)
+        self.config.set("ui.auto_resize", self.auto_resize_cb.isChecked(), save=False)
+        self.config.set("ui.show_construction_logs", self.show_const_logs_cb.isChecked(), save=False)
+        self.config.set("ui.sidebar_visible", self.show_sidebar_cb.isChecked(), save=False)
+        self.config.set("ui.console_visible", self.show_console_cb.isChecked(), save=False)
+        self.config.set("ui.theme", self.theme_combo.currentText(), save=True) # Last one saves
+
+        self.accept()

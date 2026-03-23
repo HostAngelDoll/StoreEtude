@@ -1,0 +1,145 @@
+import os
+import json
+import shutil
+from datetime import datetime
+from PyQt6.QtCore import QSettings, QStandardPaths
+
+class ConfigManager:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ConfigManager, cls).__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
+
+    @staticmethod
+    def get_default_config_path():
+        appdata = os.getenv('APPDATA')
+        if not appdata:
+            # Fallback for non-windows or weird environments
+            appdata = os.path.expanduser("~/.config")
+
+        app_dir = os.path.join(appdata, 'PrecureManager')
+        return os.path.join(app_dir, 'config.json')
+
+    def __init__(self):
+        if self._initialized:
+            return
+
+        # We use QSettings ONLY to store the path to the actual JSON config file in the Registry
+        self.registry = QSettings("MyCompany", "PrecureMediaManager")
+        default_path = self.get_default_config_path()
+        self.config_path = self.registry.value("config_json_path", default_path)
+
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+
+        self.settings = {
+            "base_dir_path": r"E:\_Internal",
+            "global_db_path": "_global.db",
+            "ui": {
+                "geometry": None,
+                "sidebar_visible": True,
+                "console_visible": True,
+                "auto_resize": True,
+                "show_construction_logs": False,
+                "theme": "Fusion"
+            }
+        }
+        self.load()
+        self._initialized = True
+
+    def load(self):
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    loaded = json.load(f)
+                    # Merge loaded settings into default ones to handle new keys
+                    self._deep_update(self.settings, loaded)
+            except Exception as e:
+                print(f"Error loading config: {e}")
+
+    def _deep_update(self, base, update):
+        for k, v in update.items():
+            if isinstance(v, dict) and k in base and isinstance(base[k], dict):
+                self._deep_update(base[k], v)
+            else:
+                base[k] = v
+
+    def save(self):
+        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
+        try:
+            with open(self.config_path, 'w', encoding='utf-8') as f:
+                json.dump(self.settings, f, indent=4)
+        except Exception as e:
+            print(f"Error saving config: {e}")
+
+    def get(self, key, default=None):
+        keys = key.split('.')
+        val = self.settings
+        for k in keys:
+            if isinstance(val, dict) and k in val:
+                val = val[k]
+            else:
+                return default
+        return val
+
+    def set(self, key, value, save=True):
+        keys = key.split('.')
+        val = self.settings
+        for k in keys[:-1]:
+            if k not in val:
+                val[k] = {}
+            val = val[k]
+        val[keys[-1]] = value
+        if save:
+            self.save()
+
+    def move_config_file(self, new_path):
+        if new_path == self.config_path:
+            return True
+
+        try:
+            # Ensure target directory exists
+            os.makedirs(os.path.dirname(new_path), exist_ok=True)
+
+            # Move file
+            if os.path.exists(self.config_path):
+                shutil.move(self.config_path, new_path)
+            else:
+                # If current doesn't exist, just save to new path
+                self.config_path = new_path
+                self.save()
+
+            # Update registry
+            self.config_path = new_path
+            self.registry.setValue("config_json_path", new_path)
+            return True
+        except Exception as e:
+            print(f"Error moving config: {e}")
+            return False
+
+    @staticmethod
+    def validate_base_dir(path):
+        if not os.path.exists(path):
+            return False, "La ruta no existe."
+
+        current_year = datetime.now().year
+        missing = []
+        for year in range(2004, current_year + 1):
+            year_path = os.path.join(path, str(year))
+            if not os.path.isdir(year_path):
+                missing.append(str(year))
+
+        if missing:
+            return False, f"Faltan carpetas de años: {', '.join(missing[:5])}{'...' if len(missing) > 5 else ''}"
+
+        return True, ""
+
+    @staticmethod
+    def validate_db_path(path):
+        if os.path.exists(path) and os.path.isfile(path):
+            return True, ""
+        # If it doesn't exist, it might be created later, but we should probably warn
+        return False, "Archivo de base de datos no encontrado."
