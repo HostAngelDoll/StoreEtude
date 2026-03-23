@@ -43,7 +43,7 @@ class PrecureManagerApp(QMainWindow):
 
         self.apply_theme(self.config.get("ui.theme", "Fusion"))
         self.init_actions()
-
+        
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         self.main_layout = QHBoxLayout(central_widget)
@@ -79,11 +79,11 @@ class PrecureManagerApp(QMainWindow):
         self.tabs.addTab(self.global_tab_container, "Global")
 
         self.init_menu_bar()
-        # init_db_connections depends on year_tree (via get_current_year),
+        # init_db_connections depends on year_tree (via get_current_year), 
         # so it must be called AFTER init_sidebar() and BEFORE load_settings()
         # which might rely on DB connections being active for model selection.
         self.init_db_connections()
-
+        
         # Ensure all tabs are properly initialized with the correct database connection
         self.registry_tab.update_database("year_db")
         self.resources_tab.update_database("year_db")
@@ -324,13 +324,13 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Migrando recursos...", "Cancelar", 0, 100, self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-
+        
         migrator.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         migrator.log_message.connect(self.log)
         progress.canceled.connect(migrator.cancel)
-
+        
         migrator.migrate_resources()
-
+        
         self.resources_tab.model.select()
         if not progress.wasCanceled():
             QMessageBox.information(self, "Migración", "Proceso de migración de recursos finalizado.")
@@ -340,21 +340,21 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Migrando registros...", "Cancelar", 0, 100, self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-
+        
         migrator.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         migrator.log_message.connect(self.log)
         progress.canceled.connect(migrator.cancel)
-
+        
         def handle_confirmation(year, message):
-            reply = QMessageBox.question(self, "Advertencia",
+            reply = QMessageBox.question(self, "Advertencia", 
                 message + " Se recomienda hacer un respaldo manual antes.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             migrator.set_confirmation_result(reply == QMessageBox.StandardButton.Yes)
-
+            
         migrator.request_confirmation.connect(handle_confirmation)
-
+        
         migrator.migrate_registry()
-
+        
         self.registry_tab.model.select()
         if not progress.wasCanceled():
             QMessageBox.information(self, "Migración", "Proceso de migración de registros finalizado.")
@@ -371,13 +371,13 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Regenerando índices...", "Cancelar", 0, len(years), self)
         progress.setWindowTitle("Procesando años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-
+        
         ops.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         ops.log_message.connect(self.log)
         progress.canceled.connect(ops.cancel)
-
+        
         ops.regenerate_registry_index(years)
-
+        
         self.registry_tab.model.select()
         if not progress.wasCanceled():
             QMessageBox.information(self, "Regenerar Índice", "Proceso finalizado.")
@@ -412,12 +412,12 @@ class PrecureManagerApp(QMainWindow):
         progress = QProgressDialog("Escaneando y vinculando recursos...", "Cancelar", 0, len(years), self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
-
+        
         scanner.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
         scanner.log_message.connect(self.log)
         scanner.warning_emitted.connect(lambda t, m: QMessageBox.warning(self, t, m))
         progress.canceled.connect(scanner.cancel)
-
+        
         scanner.scan_and_link_resources(years, overwrite)
         self.resources_tab.model.select()
 
@@ -445,15 +445,15 @@ class PrecureManagerApp(QMainWindow):
 
     def init_db_connections(self):
         from db_manager import GLOBAL_DB_PATH
-
+        
         db_global = QSqlDatabase.database("global_db", open=False)
         if not db_global.isValid():
             db_global = QSqlDatabase.addDatabase("QSQLITE", "global_db")
-
+        
         if db_global.databaseName() != GLOBAL_DB_PATH:
             db_global.close()
             db_global.setDatabaseName(GLOBAL_DB_PATH)
-
+            
         if not db_global.isOpen():
             db_global.open()
 
@@ -461,7 +461,7 @@ class PrecureManagerApp(QMainWindow):
         if not db_year.isValid():
             db_year = QSqlDatabase.addDatabase("QSQLITE", "year_db")
             db_year.setDatabaseName(get_yearly_db_path(self.get_current_year()))
-
+        
         if not db_year.isOpen():
             if db_year.open():
                 QSqlQuery(db_year).exec(f"ATTACH DATABASE '{GLOBAL_DB_PATH}' AS global_db")
@@ -533,7 +533,7 @@ class PrecureManagerApp(QMainWindow):
             self.type_res_tab.update_database("global_db")
             self.seasons_tab.update_database("global_db")
             self.domains_tab.update_database("global_db")
-
+            
             # Refresh year-based tabs
             self.on_year_selected(self.year_tree.currentIndex())
 

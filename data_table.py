@@ -74,7 +74,7 @@ class ColumnHeaderView(QHeaderView):
     def on_section_resized(self, logicalIndex, oldSize, newSize):
         if self._is_applying_config:
             return
-
+        
         table_tab = self.get_table_tab()
         if table_tab and table_tab.model:
             col_name = table_tab.model.headerData(logicalIndex, Qt.Orientation.Horizontal)
@@ -164,9 +164,9 @@ class ColumnHeaderView(QHeaderView):
         rename_col = menu.addAction("Renombrar columna")
         delete_col = menu.addAction("Eliminar columna")
         menu.addSeparator()
-
+        
         lock_action = menu.addAction("Desbloquear Ancho" if is_locked else "Bloquear Ancho")
-
+        
         menu.addSeparator()
         copy_col_name = menu.addAction("Copiar nombre de esta columna")
         copy_col_data = menu.addAction("Copiar datos de esta columna")
@@ -799,7 +799,7 @@ class DataTableTab(QWidget):
             const_log("Inicializando ColumnHeaderView...")
             new_header = ColumnHeaderView(Qt.Orientation.Horizontal, new_view)
             new_view.setHorizontalHeader(new_header)
-
+            
             # Temporarily set to interactive to allow resizing
             new_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
@@ -940,8 +940,8 @@ class DataTableTab(QWidget):
             # Only lock if not already locked
             col_config = config.get_column_config(self.table_name, col_name)
             if not col_config.get("locked", False):
-                config.set_column_config(self.table_name, col_name,
-                                         width=header.sectionSize(i),
+                config.set_column_config(self.table_name, col_name, 
+                                         width=header.sectionSize(i), 
                                          locked=True, save=False)
         config.save()
         self.apply_column_configs()
@@ -955,8 +955,8 @@ class DataTableTab(QWidget):
             col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
             col_config = config.get_column_config(self.table_name, col_name)
             if col_config.get("locked", False):
-                config.set_column_config(self.table_name, col_name,
-                                         width=header.sectionSize(i),
+                config.set_column_config(self.table_name, col_name, 
+                                         width=header.sectionSize(i), 
                                          locked=False, save=False)
         config.save()
         self.apply_column_configs()
@@ -964,21 +964,21 @@ class DataTableTab(QWidget):
     def apply_column_configs(self):
         if not self.model:
             return
-
+            
         header = self.view.horizontalHeader()
         if not isinstance(header, ColumnHeaderView):
             return
-
+            
         header._is_applying_config = True
         from config_manager import ConfigManager
         config = ConfigManager()
-
+        
         main_win = None
         for widget in QApplication.topLevelWidgets():
             if isinstance(widget, QMainWindow):
                 main_win = widget
                 break
-
+        
         auto_resize_global = True
         if main_win and hasattr(main_win, 'auto_resize_action'):
             auto_resize_global = main_win.auto_resize_action.isChecked()
@@ -986,10 +986,10 @@ class DataTableTab(QWidget):
         for i in range(self.model.columnCount()):
             col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
             col_config = config.get_column_config(self.table_name, col_name)
-
+            
             width = col_config.get("width")
             locked = col_config.get("locked", False)
-
+            
             if locked:
                 header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
                 header.resizeSection(i, width)
@@ -1000,5 +1000,5 @@ class DataTableTab(QWidget):
                     header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
                     if width:
                         header.resizeSection(i, width)
-
+        
         header._is_applying_config = False

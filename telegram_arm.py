@@ -25,7 +25,7 @@ def get_api_credentials():
     return int(api_id), api_hash
 
 async def main():
-    load_dotenv("telegram.env")
+    load_dotenv("env/telegram.env")
     api_id, api_hash = get_api_credentials()
     client = TelegramClient(SESSION_NAME, api_id, api_hash)
 

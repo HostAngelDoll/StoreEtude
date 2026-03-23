@@ -19,22 +19,22 @@ class ConfigManager:
         if not appdata:
             # Fallback for non-windows or weird environments
             appdata = os.path.expanduser("~/.config")
-
+        
         app_dir = os.path.join(appdata, 'PrecureManager')
         return os.path.join(app_dir, 'config.json')
-
+    
     def __init__(self):
         if self._initialized:
             return
-
+            
         # We use QSettings ONLY to store the path to the actual JSON config file in the Registry
         self.registry = QSettings("MyCompany", "PrecureMediaManager")
         default_path = self.get_default_config_path()
         self.config_path = self.registry.value("config_json_path", default_path)
-
+        
         # Ensure the directory exists
         os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
-
+        
         self.settings = {
             "base_dir_path": r"E:\_Internal",
             "global_db_path": "_global.db",
@@ -95,15 +95,15 @@ class ConfigManager:
         configs = self.get("ui.column_configs", {})
         if table_name not in configs:
             configs[table_name] = {}
-
+        
         if col_name not in configs[table_name]:
             configs[table_name][col_name] = {"width": 100, "locked": False}
-
+        
         if width is not None:
             configs[table_name][col_name]["width"] = width
         if locked is not None:
             configs[table_name][col_name]["locked"] = locked
-
+            
         self.set("ui.column_configs", configs, save=save)
 
     def set(self, key, value, save=True):
@@ -120,11 +120,11 @@ class ConfigManager:
     def move_config_file(self, new_path):
         if new_path == self.config_path:
             return True
-
+        
         try:
             # Ensure target directory exists
             os.makedirs(os.path.dirname(new_path), exist_ok=True)
-
+            
             # Move file
             if os.path.exists(self.config_path):
                 shutil.move(self.config_path, new_path)
@@ -132,7 +132,7 @@ class ConfigManager:
                 # If current doesn't exist, just save to new path
                 self.config_path = new_path
                 self.save()
-
+            
             # Update registry
             self.config_path = new_path
             self.registry.setValue("config_json_path", new_path)
@@ -145,17 +145,17 @@ class ConfigManager:
     def validate_base_dir(path):
         if not os.path.exists(path):
             return False, "La ruta no existe."
-
+        
         current_year = datetime.now().year
         missing = []
         for year in range(2004, current_year + 1):
             year_path = os.path.join(path, str(year))
             if not os.path.isdir(year_path):
                 missing.append(str(year))
-
+        
         if missing:
             return False, f"Faltan carpetas de años: {', '.join(missing[:5])}{'...' if len(missing) > 5 else ''}"
-
+        
         return True, ""
 
     @staticmethod

@@ -208,7 +208,7 @@ class ReportMaterialsDialog(QDialog):
 
         self.view = QTableView()
         self.view.setModel(self.model)
-
+        
         from data_table import ColumnHeaderView
         self.header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
         self.view.setHorizontalHeader(self.header)
@@ -241,14 +241,14 @@ class ReportMaterialsDialog(QDialog):
 
     def apply_column_configs(self):
         self.header._is_applying_config = True
-
+        
         for i in range(self.model.columnCount()):
             col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
             col_config = self.config.get_column_config(self.table_name, col_name)
-
+            
             width = col_config.get("width")
             locked = col_config.get("locked", False)
-
+            
             if locked:
                 self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
                 self.header.resizeSection(i, width)
@@ -256,7 +256,7 @@ class ReportMaterialsDialog(QDialog):
                 self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
                 if width:
                     self.header.resizeSection(i, width)
-
+        
         self.header._is_applying_config = False
 
     def eventFilter(self, source, event):
@@ -480,13 +480,13 @@ class SettingsDialog(QDialog):
         self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.setWindowTitle("Configuración")
         self.setMinimumWidth(500)
-
+        
         self.layout = QVBoxLayout(self)
-
+        
         # Paths Group
         paths_group = QGroupBox("Rutas")
         paths_layout = QFormLayout()
-
+        
         self.base_dir_edit = QLineEdit(self.config.get("base_dir_path"))
         self.btn_browse_base = QPushButton("...")
         self.btn_browse_base.clicked.connect(self.browse_base_dir)
@@ -494,7 +494,7 @@ class SettingsDialog(QDialog):
         base_h_layout.addWidget(self.base_dir_edit)
         base_h_layout.addWidget(self.btn_browse_base)
         paths_layout.addRow("Ruta Base Recursos:", base_h_layout)
-
+        
         self.global_db_edit = QLineEdit(self.config.get("global_db_path"))
         self.btn_browse_db = QPushButton("...")
         self.btn_browse_db.clicked.connect(self.browse_global_db)
@@ -502,7 +502,7 @@ class SettingsDialog(QDialog):
         db_h_layout.addWidget(self.global_db_edit)
         db_h_layout.addWidget(self.btn_browse_db)
         paths_layout.addRow("Ruta DB Global:", db_h_layout)
-
+        
         self.config_path_edit = QLineEdit(self.config.config_path)
         self.config_path_edit.setReadOnly(True)
         self.btn_move_config = QPushButton("Cambiar/Mover JSON")
@@ -511,43 +511,43 @@ class SettingsDialog(QDialog):
         config_h_layout.addWidget(self.config_path_edit)
         config_h_layout.addWidget(self.btn_move_config)
         paths_layout.addRow("Ubicación de Ajustes:", config_h_layout)
-
+        
         paths_group.setLayout(paths_layout)
         self.layout.addWidget(paths_group)
-
+        
         # UI Settings Group
         ui_group = QGroupBox("Interfaz de Usuario")
         ui_layout = QFormLayout()
-
+        
         self.auto_resize_cb = QCheckBox()
         self.auto_resize_cb.setChecked(self.config.get("ui.auto_resize", True))
         ui_layout.addRow("Auto-ajustar columnas:", self.auto_resize_cb)
-
+        
         self.show_const_logs_cb = QCheckBox()
         self.show_const_logs_cb.setChecked(self.config.get("ui.show_construction_logs", False))
         ui_layout.addRow("Mostrar logs de construcción:", self.show_const_logs_cb)
-
+        
         self.show_sidebar_cb = QCheckBox()
         self.show_sidebar_cb.setChecked(self.config.get("ui.sidebar_visible", True))
         ui_layout.addRow("Ver panel de años:", self.show_sidebar_cb)
-
+        
         self.show_console_cb = QCheckBox()
         self.show_console_cb.setChecked(self.config.get("ui.console_visible", True))
         ui_layout.addRow("Ver consola SQL:", self.show_console_cb)
-
+        
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Fusion", "Windows", "Dark"])
         self.theme_combo.setCurrentText(self.config.get("ui.theme", "Fusion"))
         ui_layout.addRow("Tema:", self.theme_combo)
-
+        
         ui_group.setLayout(ui_layout)
         self.layout.addWidget(ui_group)
-
+        
         # Column Management Button
         self.btn_manage_columns = QPushButton("Administrar Anchos de Columnas")
         self.btn_manage_columns.clicked.connect(self.manage_columns)
         self.layout.addWidget(self.btn_manage_columns)
-
+        
         # Buttons
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.buttons.accepted.connect(self.validate_and_save)
@@ -578,17 +578,17 @@ class SettingsDialog(QDialog):
     def validate_and_save(self):
         base_path = self.base_dir_edit.text()
         db_path = self.global_db_edit.text()
-
+        
         valid_base, msg_base = ConfigManager.validate_base_dir(base_path)
         if not valid_base:
-            res = QMessageBox.warning(self, "Validación de Ruta Base", f"{msg_base}\n¿Deseas guardar de todas formas?",
+            res = QMessageBox.warning(self, "Validación de Ruta Base", f"{msg_base}\n¿Deseas guardar de todas formas?", 
                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if res == QMessageBox.StandardButton.No:
                 return
-
+        
         valid_db, msg_db = ConfigManager.validate_db_path(db_path)
         if not valid_db:
-            res = QMessageBox.warning(self, "Validación de DB Global", f"{msg_db}\n¿Deseas guardar de todas formas?",
+            res = QMessageBox.warning(self, "Validación de DB Global", f"{msg_db}\n¿Deseas guardar de todas formas?", 
                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if res == QMessageBox.StandardButton.No:
                 return
@@ -600,7 +600,7 @@ class SettingsDialog(QDialog):
         self.config.set("ui.sidebar_visible", self.show_sidebar_cb.isChecked(), save=False)
         self.config.set("ui.console_visible", self.show_console_cb.isChecked(), save=False)
         self.config.set("ui.theme", self.theme_combo.currentText(), save=True) # Last one saves
-
+        
         self.accept()
 
 class ColumnManagementDialog(QDialog):
@@ -611,21 +611,21 @@ class ColumnManagementDialog(QDialog):
         self.setWindowTitle("Gestión de Anchos de Columnas")
         self.resize(600, 400)
         self.layout = QVBoxLayout(self)
-
+        
         self.tree = QTreeView()
         self.tree.setHeaderHidden(False)
         self.model = QStandardItemModel()
         self.model.setHorizontalHeaderLabels(["Elemento", "Ancho (px)", "Bloqueado"])
-
+        
         self.load_data()
         self.tree.setModel(self.model)
         self.tree.expandAll()
         self.layout.addWidget(self.tree)
-
+        
         self.btn_clear = QPushButton("Limpiar Todo")
         self.btn_clear.clicked.connect(self.clear_all)
         self.layout.addWidget(self.btn_clear)
-
+        
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.buttons.accepted.connect(self.save_data)
         self.buttons.rejected.connect(self.reject)
@@ -634,35 +634,35 @@ class ColumnManagementDialog(QDialog):
     def load_data(self):
         configs = self.config.get("ui.column_configs", {})
         root = self.model.invisibleRootItem()
-
+        
         for table_name, columns in configs.items():
             table_item = QStandardItem(table_name)
             table_item.setEditable(False)
-
+            
             for col_name, config in columns.items():
                 col_item = QStandardItem(col_name)
                 col_item.setEditable(False)
-
+                
                 width_item = QStandardItem(str(config.get("width", 100)))
-
+                
                 lock_item = QStandardItem()
                 lock_item.setCheckable(True)
                 lock_item.setCheckState(Qt.CheckState.Checked if config.get("locked", False) else Qt.CheckState.Unchecked)
                 lock_item.setEditable(False)
-
+                
                 table_item.appendRow([col_item, width_item, lock_item])
-
+            
             root.appendRow(table_item)
 
     def save_data(self):
         new_configs = {}
         root = self.model.invisibleRootItem()
-
+        
         for i in range(root.rowCount()):
             table_item = root.child(i)
             table_name = table_item.text()
             new_configs[table_name] = {}
-
+            
             for j in range(table_item.rowCount()):
                 col_name = table_item.child(j, 0).text()
                 try:
@@ -670,9 +670,9 @@ class ColumnManagementDialog(QDialog):
                 except:
                     width = 100
                 locked = table_item.child(j, 2).checkState() == Qt.CheckState.Checked
-
+                
                 new_configs[table_name][col_name] = {"width": width, "locked": locked}
-
+        
         self.config.set("ui.column_configs", new_configs)
         self.accept()
 
