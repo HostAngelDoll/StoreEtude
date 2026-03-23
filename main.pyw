@@ -16,7 +16,7 @@ from PyQt6.QtSql import QSqlDatabase, QSqlQuery
 import openpyxl
 
 from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path, BASE_DIR_PATH, refresh_config_paths
-from forms import DatabaseForm, YearRangeDialog, ReportMaterialsDialog, SettingsDialog
+from forms import DatabaseForm, YearRangeDialog, ReportMaterialsDialog, SettingsDialog, TelegramDownloadDialog
 from config_manager import ConfigManager
 from data_table import DataTableTab
 
@@ -204,6 +204,9 @@ class PrecureManagerApp(QMainWindow):
         self.report_materials_action = QAction("Reportar Materiales Vistos", self)
         self.report_materials_action.triggered.connect(self.on_report_materials_requested)
 
+        self.tg_download_action = QAction("Descargar nuevo contenido desde telegram", self)
+        self.tg_download_action.triggered.connect(self.on_tg_download_requested)
+
         # Vista
         self.toggle_sidebar = QAction("Años", self, checkable=True)
         self.toggle_sidebar.setChecked(True)
@@ -265,6 +268,7 @@ class PrecureManagerApp(QMainWindow):
         tools_menu.addAction(self.scan_link_action)
         tools_menu.addAction(self.scan_new_sd_action)
         tools_menu.addAction(self.report_materials_action)
+        tools_menu.addAction(self.tg_download_action)
 
         view_menu = menubar.addMenu("Vista")
         panels_submenu = view_menu.addMenu("Mostrar Paneles")
@@ -460,6 +464,10 @@ class PrecureManagerApp(QMainWindow):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             # Refresh registry if it's the active tab
             self.registry_tab.model.select()
+
+    def on_tg_download_requested(self):
+        dialog = TelegramDownloadDialog(self)
+        dialog.exec()
 
     def scan_master_folders(self):
         ops = DBOperations()

@@ -46,6 +46,12 @@ class ConfigManager:
                 "show_construction_logs": False,
                 "theme": "Fusion",
                 "column_configs": {} # table_name -> {col_name -> {"width": int, "locked": bool}}
+            },
+            "telegram": {
+                "api_id": "",
+                "api_hash": "",
+                "chat_id": None,
+                "chat_name": ""
             }
         }
         self.load()
