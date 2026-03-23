@@ -83,6 +83,16 @@ class PrecureManagerApp(QMainWindow):
         # so it must be called AFTER init_sidebar() and BEFORE load_settings()
         # which might rely on DB connections being active for model selection.
         self.init_db_connections()
+
+        # Ensure all tabs are properly initialized with the correct database connection
+        self.registry_tab.update_database("year_db")
+        self.resources_tab.update_database("year_db")
+        self.catalog_tab.update_database("global_db")
+        self.opener_tab.update_database("global_db")
+        self.type_res_tab.update_database("global_db")
+        self.seasons_tab.update_database("global_db")
+        self.domains_tab.update_database("global_db")
+
         self.load_settings()
 
     def apply_theme(self, theme_name):
@@ -489,12 +499,14 @@ class PrecureManagerApp(QMainWindow):
             self.load_settings()
             # If the DB path changed, we might need to reconnect
             self.init_db_connections()
-            # Refresh all models because global_db might have changed
-            self.catalog_tab.model.select()
-            self.opener_tab.model.select()
-            self.type_res_tab.model.select()
-            self.seasons_tab.model.select()
-            self.domains_tab.model.select()
+            # Reconstruct global tabs to use new connection/path
+            self.catalog_tab.update_database("global_db")
+            self.opener_tab.update_database("global_db")
+            self.type_res_tab.update_database("global_db")
+            self.seasons_tab.update_database("global_db")
+            self.domains_tab.update_database("global_db")
+
+            # Refresh year-based tabs
             self.on_year_selected(self.year_tree.currentIndex())
 
     def log(self, message, is_error=False, target="resources"):

@@ -163,6 +163,7 @@ class DataTableTab(QWidget):
         self.layout = QVBoxLayout(self)
         
         self.view = QTableView()
+        self.model = None
         self.init_ui_components()
         self.update_database(db_conn_name)
 
