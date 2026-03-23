@@ -68,6 +68,30 @@ class ColumnHeaderView(QHeaderView):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.customContextMenuRequested.connect(self.show_context_menu)
         self.filter_rects = {}
+        self.sectionResized.connect(self.on_section_resized)
+        self._is_applying_config = False
+
+    def on_section_resized(self, logicalIndex, oldSize, newSize):
+        if self._is_applying_config:
+            return
+
+        table_tab = self.get_table_tab()
+        if table_tab and table_tab.model:
+            col_name = table_tab.model.headerData(logicalIndex, Qt.Orientation.Horizontal)
+            from config_manager import ConfigManager
+            config = ConfigManager()
+            # Only save if not locked (to avoid overwrite during programmatic adjustment if any)
+            # Actually, we should save manual changes
+            config.set_column_config(table_tab.table_name, col_name, width=newSize)
+
+    def get_table_tab(self):
+        # Traverse up to find DataTableTab
+        p = self.parent()
+        while p:
+            if hasattr(p, 'table_name') and hasattr(p, 'model'):
+                return p
+            p = p.parent()
+        return None
 
     def sectionSizeFromContents(self, logicalIndex):
         size = super().sectionSizeFromContents(logicalIndex)
@@ -127,11 +151,22 @@ class ColumnHeaderView(QHeaderView):
         if logical_index < 0:
             return
         
+        table_tab = self.get_table_tab()
+        col_name = table_tab.model.headerData(logical_index, Qt.Orientation.Horizontal)
+        from config_manager import ConfigManager
+        config = ConfigManager()
+        col_config = config.get_column_config(table_tab.table_name, col_name)
+        is_locked = col_config.get("locked", False)
+
         menu = QMenu(self)
         add_left = menu.addAction("Agregar columna (izquierda)")
         add_right = menu.addAction("Agregar columna (derecha)")
         rename_col = menu.addAction("Renombrar columna")
         delete_col = menu.addAction("Eliminar columna")
+        menu.addSeparator()
+
+        lock_action = menu.addAction("Desbloquear Ancho" if is_locked else "Bloquear Ancho")
+
         menu.addSeparator()
         copy_col_name = menu.addAction("Copiar nombre de esta columna")
         copy_col_data = menu.addAction("Copiar datos de esta columna")
@@ -140,8 +175,11 @@ class ColumnHeaderView(QHeaderView):
         if not action:
             return
         
-        # Hierarchy: ColumnHeaderView -> QTableView -> QSplitter -> DataTableTab
-        table_tab = self.parent().parent().parent() 
+        if action == lock_action:
+            config.set_column_config(table_tab.table_name, col_name, locked=not is_locked)
+            table_tab.apply_column_configs()
+            return
+
         if action == add_left:
             table_tab.add_column(logical_index)
         elif action == add_right:
@@ -163,6 +201,7 @@ class DataTableTab(QWidget):
         self.layout = QVBoxLayout(self)
         
         self.view = QTableView()
+        self.model = None
         self.init_ui_components()
         self.update_database(db_conn_name)
 
@@ -761,13 +800,8 @@ class DataTableTab(QWidget):
             new_header = ColumnHeaderView(Qt.Orientation.Horizontal, new_view)
             new_view.setHorizontalHeader(new_header)
 
-            # Apply user setting for auto-resize
-            if auto_resize:
-                new_header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-                const_log("Header configurado en modo Stretch.")
-            else:
-                new_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-                const_log("Header configurado en modo Interactivo.")
+            # Temporarily set to interactive to allow resizing
+            new_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
             if isinstance(new_model, QSqlRelationalTableModel):
                 new_view.setItemDelegate(QSqlRelationalDelegate(new_view))
@@ -790,12 +824,12 @@ class DataTableTab(QWidget):
             self.view = new_view
             self.model = new_model
 
+            # Apply saved widths and locks
+            self.apply_column_configs()
+
             if old_view:
                 old_view.deleteLater()
                 const_log("Vista antigua eliminada.")
-
-            if not auto_resize:
-                new_view.resizeColumnsToContents()
 
             const_log("Reconstrucción finalizada con éxito.")
 
@@ -882,9 +916,89 @@ class DataTableTab(QWidget):
             f.write(new_content)
 
     def set_auto_resize(self, enabled):
+        self.apply_column_configs()
+
+    def resize_to_contents(self):
+        if not self.view: return
+        self.view.resizeColumnsToContents()
+        # Save these new widths
         header = self.view.horizontalHeader()
-        if enabled:
-            header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        else:
-            header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
-            self.view.resizeColumnsToContents()
+        from config_manager import ConfigManager
+        config = ConfigManager()
+        for i in range(self.model.columnCount()):
+            col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
+            config.set_column_config(self.table_name, col_name, width=header.sectionSize(i), save=False)
+        config.save()
+
+    def lock_all_columns(self):
+        if not self.model: return
+        from config_manager import ConfigManager
+        config = ConfigManager()
+        header = self.view.horizontalHeader()
+        for i in range(self.model.columnCount()):
+            col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
+            # Only lock if not already locked
+            col_config = config.get_column_config(self.table_name, col_name)
+            if not col_config.get("locked", False):
+                config.set_column_config(self.table_name, col_name,
+                                         width=header.sectionSize(i),
+                                         locked=True, save=False)
+        config.save()
+        self.apply_column_configs()
+
+    def unlock_all_columns(self):
+        if not self.model: return
+        from config_manager import ConfigManager
+        config = ConfigManager()
+        header = self.view.horizontalHeader()
+        for i in range(self.model.columnCount()):
+            col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
+            col_config = config.get_column_config(self.table_name, col_name)
+            if col_config.get("locked", False):
+                config.set_column_config(self.table_name, col_name,
+                                         width=header.sectionSize(i),
+                                         locked=False, save=False)
+        config.save()
+        self.apply_column_configs()
+
+    def apply_column_configs(self):
+        if not self.model:
+            return
+
+        header = self.view.horizontalHeader()
+        if not isinstance(header, ColumnHeaderView):
+            return
+
+        header._is_applying_config = True
+        from config_manager import ConfigManager
+        config = ConfigManager()
+
+        main_win = None
+        for widget in QApplication.topLevelWidgets():
+            if isinstance(widget, QMainWindow):
+                main_win = widget
+                break
+
+        auto_resize_global = True
+        if main_win and hasattr(main_win, 'auto_resize_action'):
+            auto_resize_global = main_win.auto_resize_action.isChecked()
+
+        for i in range(self.model.columnCount()):
+            col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
+            col_config = config.get_column_config(self.table_name, col_name)
+
+            width = col_config.get("width")
+            locked = col_config.get("locked", False)
+
+            if locked:
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
+                header.resizeSection(i, width)
+            else:
+                if auto_resize_global:
+                    header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
+                else:
+                    header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+                    if width:
+                        header.resizeSection(i, width)
+
+        header._is_applying_config = False

@@ -3,10 +3,19 @@ import sqlite3
 import re
 from datetime import datetime
 from PyQt6.QtSql import QSqlQuery, QSqlDatabase
+from config_manager import ConfigManager
 
-GLOBAL_DB_PATH = "_global.db"
-BASE_DIR_PATH = r"E:\_Internal"  # Configurable
+_config = ConfigManager()
+
+GLOBAL_DB_PATH = _config.get("global_db_path", "_global.db")
+BASE_DIR_PATH = _config.get("base_dir_path", r"E:\_Internal")
 SQL_DIR = "sql"
+
+def refresh_config_paths():
+    global GLOBAL_DB_PATH, BASE_DIR_PATH
+    _config.load()
+    GLOBAL_DB_PATH = _config.get("global_db_path", "_global.db")
+    BASE_DIR_PATH = _config.get("base_dir_path", r"E:\_Internal")
 
 def get_db_connection(db_path):
     conn = sqlite3.connect(db_path)
