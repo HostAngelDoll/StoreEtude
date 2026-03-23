@@ -37,7 +37,10 @@ class TelegramManager(QObject):
 
     def _run_loop(self):
         asyncio.set_event_loop(self.loop)
-        self.loop.run_forever()
+        try:
+            self.loop.run_forever()
+        except Exception as e:
+            print(f"TelegramManager loop error: {e}")
 
     def run_coro(self, coro):
         return asyncio.run_coroutine_threadsafe(coro, self.loop)
@@ -128,14 +131,18 @@ class TelegramManager(QObject):
         if not client or not await client.is_user_authorized():
             return
 
-        dialogs = await client.get_dialogs()
-        chat_list = []
-        for d in dialogs:
-            chat_list.append({
-                'id': d.id,
-                'name': d.name or "Sin nombre"
-            })
-        self.chats_loaded.emit(chat_list)
+        try:
+            dialogs = await client.get_dialogs()
+            chat_list = []
+            for d in dialogs:
+                chat_list.append({
+                    'id': d.id,
+                    'name': d.name or "Sin nombre"
+                })
+            self.chats_loaded.emit(chat_list)
+        except Exception as e:
+            print(f"Error fetching chats: {e}")
+            self.connection_status.emit(f"Error al obtener chats: {str(e)}", True)
 
     def fetch_videos(self, chat_id, limit=5):
         self.run_coro(self._fetch_videos_async(chat_id, limit))
@@ -146,18 +153,22 @@ class TelegramManager(QObject):
             return
 
         videos = []
-        async for msg in client.iter_messages(chat_id):
-            if msg.video:
-                videos.append({
-                    'id': msg.id,
-                    'date': msg.date.isoformat() if msg.date else "",
-                    'text': msg.message or "",
-                    'file_name': msg.file.name if msg.file else "video.mp4",
-                    'size': msg.file.size if msg.file else 0
-                })
-                if len(videos) >= limit:
-                    break
-        self.videos_loaded.emit(videos)
+        try:
+            async for msg in client.iter_messages(chat_id):
+                if msg.video:
+                    videos.append({
+                        'id': msg.id,
+                        'date': msg.date.isoformat() if msg.date else "",
+                        'text': msg.message or "",
+                        'file_name': msg.file.name if msg.file else "video.mp4",
+                        'size': msg.file.size if msg.file else 0
+                    })
+                    if len(videos) >= limit:
+                        break
+            self.videos_loaded.emit(videos)
+        except Exception as e:
+            print(f"Error fetching videos: {e}")
+            self.download_finished.emit(False, f"Error al obtener videos: {str(e)}")
 
     def download_video(self, chat_id, message_id, dest_path):
         self.run_coro(self._download_video_async(chat_id, message_id, dest_path))

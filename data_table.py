@@ -17,6 +17,7 @@ from PyQt6.QtWidgets import QStyledItemDelegate, QComboBox
 
 from forms import DatabaseForm
 from filter_widget import FilterMenu
+from db_manager import SQL_DIR
 
 class ComboDelegate(QStyledItemDelegate):
     def __init__(self, table_name, model_column, filter_str=None, parent=None):
@@ -846,7 +847,7 @@ class DataTableTab(QWidget):
 
     def get_sql_filepath(self):
         filename = "global.sql" if self.db_conn_name == "global_db" else "yearly.sql"
-        return os.path.join("sql", filename)
+        return os.path.join(SQL_DIR, filename)
 
     def update_sql_file_add_column(self, col_name):
         path = self.get_sql_filepath()

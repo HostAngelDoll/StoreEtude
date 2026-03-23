@@ -631,13 +631,16 @@ class SettingsDialog(QDialog):
 
     def update_tg_status(self, message, connected):
         self.tg_status_label.setText(message)
+        try:
+            self.btn_tg_connect.clicked.disconnect()
+        except TypeError:
+            pass # Not connected
+
         if connected:
             self.btn_tg_connect.setText("Desconectar")
-            self.btn_tg_connect.clicked.disconnect()
             self.btn_tg_connect.clicked.connect(self.tg_manager.disconnect)
         else:
             self.btn_tg_connect.setText("Conectar")
-            self.btn_tg_connect.clicked.disconnect()
             self.btn_tg_connect.clicked.connect(self.on_tg_connect_clicked)
 
     def handle_tg_auth(self, type):
@@ -890,35 +893,49 @@ class TelegramDownloadDialog(QDialog):
 
         self.master_combo.clear()
         if os.path.exists(year_path):
-            # Find folder with "___"
-            master_parent = None
-            for item in os.listdir(year_path):
-                if "___" in item and os.path.isdir(os.path.join(year_path, item)):
-                    master_parent = os.path.join(year_path, item)
-                    break
+            try:
+                # Find folder with "___"
+                master_parent = None
+                for item in os.listdir(year_path):
+                    if "___" in item and os.path.isdir(os.path.join(year_path, item)):
+                        master_parent = os.path.join(year_path, item)
+                        break
 
-            if master_parent:
-                subfolders = [d for d in os.listdir(master_parent) if os.path.isdir(os.path.join(master_parent, d))]
-                self.master_combo.addItems(sorted(subfolders))
+                if master_parent:
+                    subfolders = [d for d in os.listdir(master_parent) if os.path.isdir(os.path.join(master_parent, d))]
+                    self.master_combo.addItems(sorted(subfolders))
+            except Exception as e:
+                print(f"Error scanning master subfolders: {e}")
 
     def update_first_file_label(self):
         year = self.year_combo.currentText()
         base_path = self.config.get("base_dir_path")
         year_path = os.path.join(base_path, year)
         master_parent = None
-        for item in os.listdir(year_path):
-            if "___" in item and os.path.isdir(os.path.join(year_path, item)):
-                master_parent = os.path.join(year_path, item)
-                break
+        if os.path.exists(year_path):
+            try:
+                for item in os.listdir(year_path):
+                    if "___" in item and os.path.isdir(os.path.join(year_path, item)):
+                        master_parent = os.path.join(year_path, item)
+                        break
+            except Exception as e:
+                print(f"Error scanning year path: {e}")
 
         subfolder = self.master_combo.currentText()
         if master_parent and subfolder:
             full_path = os.path.join(master_parent, subfolder)
-            files = [f for f in os.listdir(full_path) if os.path.isfile(os.path.join(full_path, f))]
-            if files:
-                self.first_file_label.setText(sorted(files)[0])
+            if os.path.exists(full_path):
+                try:
+                    files = [f for f in os.listdir(full_path) if os.path.isfile(os.path.join(full_path, f))]
+                    if files:
+                        self.first_file_label.setText(sorted(files)[0])
+                    else:
+                        self.first_file_label.setText("Vacia")
+                except Exception as e:
+                    print(f"Error scanning subfolder: {e}")
+                    self.first_file_label.setText("Error")
             else:
-                self.first_file_label.setText("Vacia")
+                self.first_file_label.setText("No existe")
         else:
             self.first_file_label.setText("N/A")
 
@@ -943,13 +960,27 @@ class TelegramDownloadDialog(QDialog):
         # Determine destination
         year = self.year_combo.currentText()
         base_path = self.config.get("base_dir_path")
+        year_path = os.path.join(base_path, year)
         master_parent = None
-        for item in os.listdir(os.path.join(base_path, year)):
-            if "___" in item and os.path.isdir(os.path.join(base_path, year, item)):
-                master_parent = os.path.join(base_path, year, item)
-                break
+        if os.path.exists(year_path):
+            for item in os.listdir(year_path):
+                if "___" in item and os.path.isdir(os.path.join(year_path, item)):
+                    master_parent = os.path.join(year_path, item)
+                    break
+
+        if not master_parent:
+            QMessageBox.critical(self, "Error", f"No se encontró carpeta maestra para el año {year}")
+            self.btn_download.setEnabled(True)
+            return
 
         dest_folder = os.path.join(master_parent, self.master_combo.currentText())
+        if not os.path.exists(dest_folder):
+            try:
+                os.makedirs(dest_folder)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"No se pudo crear carpeta de destino: {e}")
+                self.btn_download.setEnabled(True)
+                return
 
         filename = video['file_name']
         if self.current_item['ren_cb'].isChecked() and self.current_item['ren_input'].text():
