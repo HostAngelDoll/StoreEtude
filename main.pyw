@@ -53,7 +53,7 @@ class PrecureManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Precure Media Manager - Core System")
-        self.setWindowIcon(QIcon(r"img\icon.ico"))
+        self.setWindowIcon(QIcon(os.path.join("img", "icon.ico")))
         self.config = ConfigManager()
         self.tg_manager = TelegramManager()
         self.sync_manager = SyncManager()
@@ -98,6 +98,10 @@ class PrecureManagerApp(QMainWindow):
         self.seasons_tab = DataTableTab("global_db", "T_Seasons")
         self.domains_tab = DataTableTab("global_db", "T_Domains_base")
 
+        self.global_tabs = [self.catalog_tab, self.opener_tab, self.type_res_tab, self.seasons_tab, self.domains_tab]
+        self.year_tabs = [self.registry_tab, self.resources_tab]
+        self.all_tabs = self.year_tabs + self.global_tabs
+
         self.global_subtabs.addTab(self.catalog_tab, "Catálogo")
         self.global_subtabs.addTab(self.opener_tab, "Modelos Opener")
         self.global_subtabs.addTab(self.type_res_tab, "Tipos Recursos")
@@ -119,13 +123,8 @@ class PrecureManagerApp(QMainWindow):
             self.run_startup_sync()
 
         # Ensure all tabs are properly initialized with the correct database connection
-        self.registry_tab.update_database("year_db")
-        self.resources_tab.update_database("year_db")
-        self.catalog_tab.update_database("global_db")
-        self.opener_tab.update_database("global_db")
-        self.type_res_tab.update_database("global_db")
-        self.seasons_tab.update_database("global_db")
-        self.domains_tab.update_database("global_db")
+        # init_db_connections calls refresh_all_tabs
+        self.init_db_connections()
 
         self.load_settings()
         self.restore_window_geometry_safe()
@@ -207,9 +206,13 @@ class PrecureManagerApp(QMainWindow):
         self.show_construction_logs.setChecked(show_const_logs)
 
     def set_auto_resize_columns(self, enabled):
-        for tab in [self.registry_tab, self.resources_tab, self.catalog_tab,
-                    self.opener_tab, self.type_res_tab, self.seasons_tab, self.domains_tab]:
+        for tab in self.all_tabs:
             tab.set_auto_resize(enabled)
+
+    def refresh_all_tabs(self):
+        for tab in self.all_tabs:
+            db_conn = "global_db" if tab in self.global_tabs else "year_db"
+            tab.update_database(db_conn)
 
     def init_actions(self):
         # Archivo
@@ -282,7 +285,7 @@ class PrecureManagerApp(QMainWindow):
 
         self.auto_resize_action = QAction("Auto-ajustar ancho de columnas", self, checkable=True)
         self.auto_resize_action.setChecked(True)
-        self.auto_resize_action.triggered.connect(self.set_auto_resize_columns)
+        self.auto_resize_action.triggered.connect(lambda checked: self.set_auto_resize_columns(checked))
 
         self.resize_to_contents_action = QAction("Ajustar anchos al contenido", self)
         self.resize_to_contents_action.triggered.connect(self.on_resize_to_contents_requested)
@@ -400,7 +403,12 @@ class PrecureManagerApp(QMainWindow):
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
 
-        migrator.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
+        def update_progress(cur, tot, lbl):
+            progress.setMaximum(tot)
+            progress.setValue(cur)
+            progress.setLabelText(lbl)
+
+        migrator.progress_changed.connect(update_progress)
         migrator.log_message.connect(self.log)
         progress.canceled.connect(migrator.cancel)
 
@@ -453,7 +461,11 @@ class PrecureManagerApp(QMainWindow):
         progress.setWindowTitle("Procesando años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
 
-        ops.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
+        def update_progress_ops(cur, tot, lbl):
+            progress.setMaximum(tot)
+            progress.setValue(cur)
+            progress.setLabelText(lbl)
+        ops.progress_changed.connect(update_progress_ops)
         ops.log_message.connect(self.log)
         progress.canceled.connect(ops.cancel)
 
@@ -519,7 +531,11 @@ class PrecureManagerApp(QMainWindow):
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
 
-        scanner.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
+        def update_progress_scanner(cur, tot, lbl):
+            progress.setMaximum(tot)
+            progress.setValue(cur)
+            progress.setLabelText(lbl)
+        scanner.progress_changed.connect(update_progress_scanner)
         scanner.log_message.connect(self.log)
         progress.canceled.connect(scanner.cancel)
 
@@ -666,6 +682,8 @@ class PrecureManagerApp(QMainWindow):
             g_path = get_offline_db_path(g_path)
 
         safe_g_path = g_path.replace("'", "''")
+        # Ensure it's detached first if it was already attached
+        QSqlQuery(db_year).exec("DETACH DATABASE global_db")
         QSqlQuery(db_year).exec(f"ATTACH DATABASE '{safe_g_path}' AS global_db")
 
         # Update tabs
@@ -700,7 +718,7 @@ class PrecureManagerApp(QMainWindow):
         return int(index.data()) if index.isValid() else 2004
 
     def nativeEvent(self, eventType, message):
-        if eventType == b"windows_generic_MSG" and message:
+        if sys.platform == "win32" and eventType == b"windows_generic_MSG" and message:
             try:
                 msg = ctypes.wintypes.MSG.from_address(int(message))
                 if msg.message == 0x0219: # WM_DEVICECHANGE
@@ -729,8 +747,7 @@ class PrecureManagerApp(QMainWindow):
     def close_all_connections(self):
         # Mandatory: close and remove all connections
         # Ensure no models are using them
-        for tab in [self.registry_tab, self.resources_tab, self.catalog_tab,
-                    self.opener_tab, self.type_res_tab, self.seasons_tab, self.domains_tab]:
+        for tab in self.all_tabs:
             if tab.model:
                 tab.view.setModel(None)
                 tab.model.deleteLater()
@@ -780,13 +797,7 @@ class PrecureManagerApp(QMainWindow):
         self.init_db_connections()
 
         # Refresh all tabs
-        self.registry_tab.update_database("year_db")
-        self.resources_tab.update_database("year_db")
-        self.catalog_tab.update_database("global_db")
-        self.opener_tab.update_database("global_db")
-        self.type_res_tab.update_database("global_db")
-        self.seasons_tab.update_database("global_db")
-        self.domains_tab.update_database("global_db")
+        self.refresh_all_tabs()
 
         progress_dialog.close()
 
@@ -822,7 +833,11 @@ class PrecureManagerApp(QMainWindow):
                 QMessageBox.warning(self, "Sincronización", f"Hubo un problema al sincronizar: {msg}")
             if callback: callback()
 
-        self.sync_manager.task_progress.connect(lambda cur, tot, lbl: (self.sync_progress.setLabelText(lbl), self.sync_progress.setValue(int(cur/tot*100 if tot > 0 else 100))))
+        def update_sync_progress(cur, tot, lbl):
+            self.sync_progress.setLabelText(lbl)
+            val = int(cur/tot*100 if tot > 0 else 100)
+            self.sync_progress.setValue(val)
+        self.sync_manager.task_progress.connect(update_sync_progress)
         self.sync_manager.sync_finished.connect(on_finished)
         self.sync_manager.perform_sync(tasks)
 
@@ -856,15 +871,8 @@ class PrecureManagerApp(QMainWindow):
 
             # If the DB path changed, we might need to reconnect
             self.init_db_connections()
-            # Reconstruct global tabs to use new connection/path
-            self.catalog_tab.update_database("global_db")
-            self.opener_tab.update_database("global_db")
-            self.type_res_tab.update_database("global_db")
-            self.seasons_tab.update_database("global_db")
-            self.domains_tab.update_database("global_db")
-
-            # Refresh year-based tabs
-            self.on_year_selected(self.year_tree.currentIndex())
+            # Reconstruct all tabs to use new connection/path
+            self.refresh_all_tabs()
 
     def log(self, message, is_error=False, target="resources"):
         if target == "resources" and hasattr(self, 'resources_tab'):
