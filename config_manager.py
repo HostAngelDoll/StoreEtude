@@ -31,6 +31,7 @@ class ConfigManager:
         self.registry = QSettings("MyCompany", "PrecureMediaManager")
         default_path = self.get_default_config_path()
         self.config_path = self.registry.value("config_json_path", default_path)
+        self.cache_path = os.path.join(os.path.dirname(self.config_path), "cache.json")
         
         # Ensure the directory exists
         os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
@@ -122,6 +123,49 @@ class ConfigManager:
         val[keys[-1]] = value
         if save:
             self.save()
+
+    def get_cache(self, key, default=None):
+        if not os.path.exists(self.cache_path):
+            return default
+        try:
+            with open(self.cache_path, 'r', encoding='utf-8') as f:
+                cache = json.load(f)
+                return cache.get(key, default)
+        except:
+            return default
+
+    def set_cache(self, key, value):
+        cache = {}
+        if os.path.exists(self.cache_path):
+            try:
+                with open(self.cache_path, 'r', encoding='utf-8') as f:
+                    cache = json.load(f)
+            except:
+                pass
+
+        cache[key] = value
+        try:
+            with open(self.cache_path, 'w', encoding='utf-8') as f:
+                json.dump(cache, f, indent=4)
+        except Exception as e:
+            print(f"Error saving cache: {e}")
+
+    def clear_cache(self, key=None):
+        if key is None:
+            if os.path.exists(self.cache_path):
+                try: os.remove(self.cache_path)
+                except: pass
+        else:
+            if os.path.exists(self.cache_path):
+                try:
+                    with open(self.cache_path, 'r', encoding='utf-8') as f:
+                        cache = json.load(f)
+                    if key in cache:
+                        del cache[key]
+                        with open(self.cache_path, 'w', encoding='utf-8') as f:
+                            json.dump(cache, f, indent=4)
+                except:
+                    pass
 
     def move_config_file(self, new_path):
         if new_path == self.config_path:

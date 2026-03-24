@@ -643,10 +643,16 @@ class SettingsDialog(QDialog):
         tg_group.setLayout(tg_layout)
         self.layout.addWidget(tg_group)
 
-        # Column Management Button
+        # Advanced/Management Area
+        mgmt_layout = QHBoxLayout()
         self.btn_manage_columns = QPushButton("Administrar Anchos de Columnas")
         self.btn_manage_columns.clicked.connect(self.manage_columns)
-        self.layout.addWidget(self.btn_manage_columns)
+        mgmt_layout.addWidget(self.btn_manage_columns)
+
+        self.btn_clear_cache = QPushButton("Limpiar Caché de Archivos")
+        self.btn_clear_cache.clicked.connect(self.clear_file_cache)
+        mgmt_layout.addWidget(self.btn_clear_cache)
+        self.layout.addLayout(mgmt_layout)
         
         # Buttons
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -745,6 +751,13 @@ class SettingsDialog(QDialog):
     def manage_columns(self):
         dialog = ColumnManagementDialog(self)
         dialog.exec()
+
+    def clear_file_cache(self):
+        res = QMessageBox.question(self, "Limpiar Caché", "¿Deseas borrar el historial de primeros archivos detectados?",
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if res == QMessageBox.StandardButton.Yes:
+            self.config.clear_cache("first_files")
+            QMessageBox.information(self, "Limpiar Caché", "Caché borrada correctamente.")
 
     def validate_and_save(self):
         base_path = self.base_dir_edit.text()
@@ -900,6 +913,10 @@ class TelegramDownloadDialog(QDialog):
         self.video_items = [] # List of (checkbox, message_dict, rename_checkbox, rename_input)
         self._apply_to_all_choice = None # (choice, rename_pattern)
 
+        # Ensure cache for first files in subfolders is initialized
+        if self.config.get_cache("first_files") is None:
+            self.config.set_cache("first_files", {})
+
         # Connect TG signals
         if self.tg_manager:
             self.tg_manager.videos_loaded.connect(self.populate_videos)
@@ -985,6 +1002,19 @@ class TelegramDownloadDialog(QDialog):
 
     def update_first_file_label(self):
         year = self.year_combo.currentText()
+        subfolder = self.master_combo.currentText()
+
+        if not subfolder:
+            self.first_file_label.setText("N/A")
+            return
+
+        # Try to get from cache first
+        cache_key = f"{year}_{subfolder}"
+        cache = self.config.get_cache("first_files", {})
+        if cache_key in cache:
+            self.first_file_label.setText(cache[cache_key])
+            return
+
         base_path = self.config.get("base_dir_path")
         year_path = os.path.join(base_path, year)
         master_parent = None
@@ -997,15 +1027,18 @@ class TelegramDownloadDialog(QDialog):
             except Exception as e:
                 print(f"Error scanning year path: {e}")
 
-        subfolder = self.master_combo.currentText()
         if master_parent and subfolder:
             full_path = os.path.join(master_parent, subfolder)
             if os.path.exists(full_path):
                 try:
                     files = [f for f in os.listdir(full_path) if os.path.isfile(os.path.join(full_path, f))]
                     if files:
-                        files.sort(key=lambda f: os.path.getmtime(os.path.join(full_path, f)))
-                        self.first_file_label.setText(files[0])
+                        files.sort() # Alphabetical sorting
+                        first_file = files[0]
+                        self.first_file_label.setText(first_file)
+                        # Save to cache
+                        cache[cache_key] = first_file
+                        self.config.set_cache("first_files", cache)
                     else:
                         self.first_file_label.setText("Vacia")
                 except Exception as e:
