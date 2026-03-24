@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTabWidget, QLabel, QHBoxLayout, QTreeView,
                              QDockWidget, QDialog, QMessageBox, QMenuBar, QMenu,
                              QProgressDialog, QStyle)
-from PyQt6.QtCore import Qt, QSettings, QByteArray, QThread
+from PyQt6.QtCore import Qt, QSettings, QByteArray, QThread, QTimer
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon, QPixmap
 from PyQt6.QtSql import QSqlDatabase, QSqlQuery
 import openpyxl
@@ -79,6 +79,8 @@ class PrecureManagerApp(QMainWindow):
         self.outer_layout.addWidget(self.main_container)
 
         self.init_sidebar()
+        # Set initial selection to first year
+        self.year_tree.setCurrentIndex(self.year_model.index(0, 0))
 
         self.check_external_drive()
 
@@ -118,14 +120,21 @@ class PrecureManagerApp(QMainWindow):
         # init_db_connections depends on year_tree (via get_current_year),
         # so it must be called AFTER init_sidebar() and BEFORE load_settings()
         # which might rely on DB connections being active for model selection.
-        # init_db_connections calls refresh_all_tabs
+        # init_db_connections will open global but NOT year_db
         self.init_db_connections()
-
-        if not self.is_offline:
-            self.run_startup_sync()
 
         self.load_settings()
         self.restore_window_geometry_safe()
+
+        # Finalize initialization after UI is ready
+        QTimer.singleShot(0, self.delayed_init)
+
+    def delayed_init(self):
+        # Open initial year
+        self.open_year_db(self.get_current_year())
+
+        if not self.is_offline:
+            self.run_startup_sync()
 
     def restore_window_geometry_safe(self):
         is_max = self.config.get("ui.maximized", True)
@@ -714,10 +723,15 @@ class PrecureManagerApp(QMainWindow):
         if not db_global.isOpen():
             db_global.open()
 
-        # Connect to the currently selected year
-        self.open_year_db(self.get_current_year())
+        # We don't open year_db here to avoid race conditions with tree selection
+        # Global tabs are refreshed now
+        for tab in self.global_tabs:
+            tab.update_database("global_db")
 
     def open_year_db(self, year):
+        if not year:
+            return False
+
         from db_manager import get_yearly_db_path, get_offline_db_path, GLOBAL_DB_PATH, is_on_external_drive
 
         y_path = get_yearly_db_path(year)
@@ -755,7 +769,10 @@ class PrecureManagerApp(QMainWindow):
         safe_g_path = g_path.replace("'", "''")
         # Ensure it's detached first if it was already attached
         self.safe_detach(db_year, "global_db")
-        QSqlQuery(db_year).exec(f"ATTACH DATABASE '{safe_g_path}' AS global_db")
+
+        q_attach = QSqlQuery(db_year)
+        if not q_attach.exec(f"ATTACH DATABASE '{safe_g_path}' AS global_db"):
+            self.log(f"ATTACH falló: {q_attach.lastError().text()}", is_error=True)
 
         # Update tabs
         self.resources_tab.update_database("year_db")

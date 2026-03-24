@@ -204,7 +204,8 @@ class DataTableTab(QWidget):
         self.view = QTableView()
         self.model = None
         self.init_ui_components()
-        self.update_database(db_conn_name)
+        # We NO LONGER call update_database here to avoid opening DB
+        # before the main application is ready.
 
     def init_ui_components(self):
         # CRUD Buttons
