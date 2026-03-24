@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTabWidget, QLabel, QHBoxLayout, QTreeView,
                              QDockWidget, QDialog, QMessageBox, QMenuBar, QMenu,
                              QProgressDialog, QStyle)
-from PyQt6.QtCore import Qt, QSettings, QByteArray
+from PyQt6.QtCore import Qt, QSettings, QByteArray, QThread
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon, QPixmap
 from PyQt6.QtSql import QSqlDatabase, QSqlQuery
 import openpyxl
@@ -60,6 +60,7 @@ class PrecureManagerApp(QMainWindow):
         self.is_offline = False
         self.last_device_change = 0
 
+        # Base geometry before possible maximize
         self.setGeometry(100, 100, 1200, 800)
         self.apply_theme(self.config.get("ui.theme", "Fusion"))
         self.init_actions()
@@ -117,19 +118,23 @@ class PrecureManagerApp(QMainWindow):
         # init_db_connections depends on year_tree (via get_current_year),
         # so it must be called AFTER init_sidebar() and BEFORE load_settings()
         # which might rely on DB connections being active for model selection.
+        # init_db_connections calls refresh_all_tabs
         self.init_db_connections()
 
         if not self.is_offline:
             self.run_startup_sync()
 
-        # Ensure all tabs are properly initialized with the correct database connection
-        # init_db_connections calls refresh_all_tabs
-        self.init_db_connections()
-
         self.load_settings()
         self.restore_window_geometry_safe()
 
     def restore_window_geometry_safe(self):
+        is_max = self.config.get("ui.maximized", True)
+        if is_max:
+            # Setting default size first helps Qt/Docks state stability
+            self.setGeometry(100, 100, 1200, 800)
+            self.showMaximized()
+            return
+
         geometry = self.config.get("ui.geometry")
         if not geometry:
             return
@@ -183,6 +188,7 @@ class PrecureManagerApp(QMainWindow):
             geo = self.saveGeometry()
             if geo and not geo.isEmpty():
                 self.config.set("ui.geometry", geo.toBase64().data().decode())
+            self.config.set("ui.maximized", self.isMaximized())
 
         self.config.set("ui.sidebar_visible", self.toggle_sidebar.isChecked())
         self.config.set("ui.console_visible", self.toggle_console.isChecked())
@@ -398,52 +404,78 @@ class PrecureManagerApp(QMainWindow):
         if self.is_offline:
             QMessageBox.warning(self, "Migración", "No se puede migrar en modo solo lectura.")
             return
-        migrator = DataMigrator()
+
         progress = QProgressDialog("Migrando recursos...", "Cancelar", 0, 100, self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
+
+        self.migrator_thread = QThread()
+        self.migrator = DataMigrator()
+        self.migrator.moveToThread(self.migrator_thread)
 
         def update_progress(cur, tot, lbl):
             progress.setMaximum(tot)
             progress.setValue(cur)
             progress.setLabelText(lbl)
 
-        migrator.progress_changed.connect(update_progress)
-        migrator.log_message.connect(self.log)
-        progress.canceled.connect(migrator.cancel)
+        def on_finished(count):
+            self.migrator_thread.quit()
+            self.resources_tab.model.select()
+            if not progress.wasCanceled():
+                QMessageBox.information(self, "Migración", f"Proceso finalizado. Se migraron {count} recursos.")
+            progress.close()
 
-        migrator.migrate_resources()
+        self.migrator.progress_changed.connect(update_progress)
+        self.migrator.log_message.connect(self.log)
+        self.migrator.finished.connect(on_finished)
 
-        self.resources_tab.model.select()
-        if not progress.wasCanceled():
-            QMessageBox.information(self, "Migración", "Proceso de migración de recursos finalizado.")
+        progress.canceled.connect(self.migrator.cancel)
+        self.migrator_thread.started.connect(self.migrator.migrate_resources)
+
+        self.migrator_thread.start()
+        progress.show()
 
     def migrate_registry_from_excel(self):
         if self.is_offline:
             QMessageBox.warning(self, "Migración", "No se puede migrar en modo solo lectura.")
             return
-        migrator = DataMigrator()
+
         progress = QProgressDialog("Migrando registros...", "Cancelar", 0, 100, self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
 
-        migrator.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
-        migrator.log_message.connect(self.log)
-        progress.canceled.connect(migrator.cancel)
+        self.reg_mig_thread = QThread()
+        self.reg_migrator = DataMigrator()
+        self.reg_migrator.moveToThread(self.reg_mig_thread)
+
+        def update_progress(cur, tot, lbl):
+            progress.setMaximum(tot)
+            progress.setValue(cur)
+            progress.setLabelText(lbl)
+
+        def on_finished(count):
+            self.reg_mig_thread.quit()
+            self.registry_tab.model.select()
+            if not progress.wasCanceled():
+                QMessageBox.information(self, "Migración", f"Proceso finalizado. Se migraron {count} registros.")
+            progress.close()
 
         def handle_confirmation(year, message):
             reply = QMessageBox.question(self, "Advertencia",
                 message + " Se recomienda hacer un respaldo manual antes.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            migrator.set_confirmation_result(reply == QMessageBox.StandardButton.Yes)
+            self.reg_migrator.set_confirmation_result(reply == QMessageBox.StandardButton.Yes)
 
-        migrator.request_confirmation.connect(handle_confirmation)
+        self.reg_migrator.progress_changed.connect(update_progress)
+        self.reg_migrator.log_message.connect(self.log)
+        self.reg_migrator.finished.connect(on_finished)
+        self.reg_migrator.request_confirmation.connect(handle_confirmation, Qt.ConnectionType.BlockingQueuedConnection)
 
-        migrator.migrate_registry()
+        progress.canceled.connect(self.reg_migrator.cancel)
+        self.reg_mig_thread.started.connect(self.reg_migrator.migrate_registry)
 
-        self.registry_tab.model.select()
-        if not progress.wasCanceled():
-            QMessageBox.information(self, "Migración", "Proceso de migración de registros finalizado.")
+        self.reg_mig_thread.start()
+        progress.show()
 
     def regenerate_registry_index(self):
         if self.is_offline:
@@ -456,24 +488,35 @@ class PrecureManagerApp(QMainWindow):
             return
 
         years = dialog.get_years(current_year)
-        ops = DBOperations()
         progress = QProgressDialog("Regenerando índices...", "Cancelar", 0, len(years), self)
         progress.setWindowTitle("Procesando años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
+
+        self.ops_thread = QThread()
+        self.ops = DBOperations()
+        self.ops.moveToThread(self.ops_thread)
 
         def update_progress_ops(cur, tot, lbl):
             progress.setMaximum(tot)
             progress.setValue(cur)
             progress.setLabelText(lbl)
-        ops.progress_changed.connect(update_progress_ops)
-        ops.log_message.connect(self.log)
-        progress.canceled.connect(ops.cancel)
 
-        ops.regenerate_registry_index(years)
+        def on_finished(msg):
+            self.ops_thread.quit()
+            self.registry_tab.model.select()
+            if not progress.wasCanceled():
+                QMessageBox.information(self, "Regenerar Índice", msg)
+            progress.close()
 
-        self.registry_tab.model.select()
-        if not progress.wasCanceled():
-            QMessageBox.information(self, "Regenerar Índice", "Proceso finalizado.")
+        self.ops.progress_changed.connect(update_progress_ops)
+        self.ops.log_message.connect(self.log)
+        self.ops.finished.connect(on_finished)
+
+        progress.canceled.connect(self.ops.cancel)
+        self.ops_thread.started.connect(lambda: self.ops.regenerate_registry_index(years))
+
+        self.ops_thread.start()
+        progress.show()
 
     def recalculate_registry_lapses(self):
         if self.is_offline:
@@ -526,42 +569,69 @@ class PrecureManagerApp(QMainWindow):
 
     def scan_new_soundtracks_ui(self, years):
         from forms import DuplicateActionDialog
-        scanner = ResourceScanner()
         progress = QProgressDialog("Buscando nuevas soundtracks...", "Cancelar", 0, len(years), self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
 
-        def update_progress_scanner(cur, tot, lbl):
+        self.sd_scan_thread = QThread()
+        self.sd_scanner = ResourceScanner()
+        self.sd_scanner.moveToThread(self.sd_scan_thread)
+
+        def update_progress(cur, tot, lbl):
             progress.setMaximum(tot)
             progress.setValue(cur)
             progress.setLabelText(lbl)
-        scanner.progress_changed.connect(update_progress_scanner)
-        scanner.log_message.connect(self.log)
-        progress.canceled.connect(scanner.cancel)
 
         def handle_duplicate(title):
             diag = DuplicateActionDialog(title, self)
             diag.exec()
-            scanner.set_duplicate_choice(*diag.get_choice())
+            self.sd_scanner.set_duplicate_choice(*diag.get_choice())
 
-        scanner.request_duplicate_action.connect(handle_duplicate)
+        def on_finished():
+            self.sd_scan_thread.quit()
+            self.resources_tab.model.select()
+            progress.close()
 
-        scanner.scan_new_soundtracks_lyrics(years)
-        self.resources_tab.model.select()
+        self.sd_scanner.progress_changed.connect(update_progress)
+        self.sd_scanner.log_message.connect(self.log)
+        self.sd_scanner.request_duplicate_action.connect(handle_duplicate, Qt.ConnectionType.BlockingQueuedConnection)
+        self.sd_scanner.finished.connect(on_finished)
+
+        progress.canceled.connect(self.sd_scanner.cancel)
+        self.sd_scan_thread.started.connect(lambda: self.sd_scanner.scan_new_soundtracks_lyrics(years))
+
+        self.sd_scan_thread.start()
+        progress.show()
 
     def scan_and_link_resources_ui(self, years, overwrite=True):
-        scanner = ResourceScanner()
         progress = QProgressDialog("Escaneando y vinculando recursos...", "Cancelar", 0, len(years), self)
         progress.setWindowTitle("Trabajando con años")
         progress.setWindowModality(Qt.WindowModality.WindowModal)
 
-        scanner.progress_changed.connect(lambda cur, tot, lbl: (progress.setMaximum(tot), progress.setValue(cur), progress.setLabelText(lbl)))
-        scanner.log_message.connect(self.log)
-        scanner.warning_emitted.connect(lambda t, m: QMessageBox.warning(self, t, m))
-        progress.canceled.connect(scanner.cancel)
+        self.scan_thread = QThread()
+        self.scanner = ResourceScanner()
+        self.scanner.moveToThread(self.scan_thread)
 
-        scanner.scan_and_link_resources(years, overwrite)
-        self.resources_tab.model.select()
+        def update_progress(cur, tot, lbl):
+            progress.setMaximum(tot)
+            progress.setValue(cur)
+            progress.setLabelText(lbl)
+
+        def on_finished():
+            self.scan_thread.quit()
+            self.resources_tab.model.select()
+            progress.close()
+
+        self.scanner.progress_changed.connect(update_progress)
+        self.scanner.log_message.connect(self.log)
+        self.scanner.warning_emitted.connect(lambda t, m: QMessageBox.warning(self, t, m))
+        self.scanner.finished.connect(on_finished)
+
+        progress.canceled.connect(self.scanner.cancel)
+        self.scan_thread.started.connect(lambda: self.scanner.scan_and_link_resources(years, overwrite))
+
+        self.scan_thread.start()
+        progress.show()
 
     def on_report_materials_requested(self):
         if self.is_offline:
@@ -600,9 +670,10 @@ class PrecureManagerApp(QMainWindow):
     def is_drive_ready(self, drive):
         if not drive: return False
         try:
-            # Check existence and attempt to list directory to ensure it's actually readable
-            return os.path.exists(drive + "\\") and os.listdir(drive + "\\") is not None
-        except:
+            # Check existence and confirm it is a directory
+            return os.path.isdir(drive + "\\")
+        except Exception as e:
+            print(f"Error checking drive {drive}: {e}")
             return False
 
     def check_external_drive(self):
@@ -683,7 +754,7 @@ class PrecureManagerApp(QMainWindow):
 
         safe_g_path = g_path.replace("'", "''")
         # Ensure it's detached first if it was already attached
-        QSqlQuery(db_year).exec("DETACH DATABASE global_db")
+        self.safe_detach(db_year, "global_db")
         QSqlQuery(db_year).exec(f"ATTACH DATABASE '{safe_g_path}' AS global_db")
 
         # Update tabs
@@ -706,6 +777,14 @@ class PrecureManagerApp(QMainWindow):
         self.year_tree.clicked.connect(self.on_year_selected)
         self.dock.setWidget(self.year_tree)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dock)
+
+    def safe_detach(self, db, schema_name):
+        query = QSqlQuery(db)
+        if query.exec("PRAGMA database_list"):
+            while query.next():
+                if query.value(1) == schema_name:
+                    QSqlQuery(db).exec(f"DETACH DATABASE {schema_name}")
+                    break
 
     def on_year_selected(self, index):
         year = index.data()
@@ -826,7 +905,7 @@ class PrecureManagerApp(QMainWindow):
             try:
                 self.sync_manager.task_progress.disconnect()
                 self.sync_manager.sync_finished.disconnect()
-            except: pass
+            except Exception: pass
 
             self.sync_progress.close()
             if not success:

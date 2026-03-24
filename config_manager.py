@@ -43,6 +43,7 @@ class ConfigManager:
             "global_db_path": "_global.db",
             "ui": {
                 "geometry": None,
+                "maximized": True,
                 "sidebar_visible": True,
                 "console_visible": True,
                 "auto_resize": True,

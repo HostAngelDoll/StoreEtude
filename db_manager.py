@@ -82,7 +82,8 @@ def init_yearly_dbs(reset=False):
     if not os.path.exists(BASE_DIR_PATH):
         try:
             os.makedirs(BASE_DIR_PATH)
-        except:
+        except Exception as e:
+            print(f"Error creating base dir: {e}")
             return
 
     for year in range(2004, 2027):
@@ -125,7 +126,7 @@ def calculate_lapsed(datetime_range):
         hours, remainder = divmod(total_seconds, 3600)
         minutes, seconds = divmod(remainder, 60)
         return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-    except:
+    except Exception:
         return "00:00:00"
 
 def get_opener_model_info(dt_range, model_writer):
