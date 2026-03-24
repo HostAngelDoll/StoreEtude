@@ -686,6 +686,7 @@ class SettingsDialog(QDialog):
         self.btn_tg_connect.setText("Desconectar" if connected else "Conectar")
 
     def handle_tg_auth(self, type):
+        if not self.tg_manager: return
         self._init_tg_manager()
         if type == "phone":
             phone, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce tu número de teléfono (+...):")
@@ -698,6 +699,9 @@ class SettingsDialog(QDialog):
             if ok: self.tg_manager.submit_password(pw)
 
     def on_select_chat_clicked(self):
+        if not self.tg_manager:
+            QMessageBox.critical(self, "Error", "Telegram Manager no disponible.")
+            return
         self._init_tg_manager()
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         self.tg_manager.fetch_chats()
@@ -897,9 +901,10 @@ class TelegramDownloadDialog(QDialog):
         self._apply_to_all_choice = None # (choice, rename_pattern)
 
         # Connect TG signals
-        self.tg_manager.videos_loaded.connect(self.populate_videos)
-        self.tg_manager.download_progress.connect(self.update_progress)
-        self.tg_manager.download_finished.connect(self.on_download_finished)
+        if self.tg_manager:
+            self.tg_manager.videos_loaded.connect(self.populate_videos)
+            self.tg_manager.download_progress.connect(self.update_progress)
+            self.tg_manager.download_finished.connect(self.on_download_finished)
 
         # Initial data
         self.update_master_subfolders()
@@ -907,10 +912,10 @@ class TelegramDownloadDialog(QDialog):
 
     def fetch_latest_videos(self):
         chat_id = self.config.get("telegram.chat_id")
-        if chat_id:
+        if chat_id and self.tg_manager:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             self.tg_manager.fetch_videos(chat_id, limit=5)
-        else:
+        elif not chat_id:
             QMessageBox.warning(self, "Telegram", "No se ha seleccionado un chat de destino en Configuración.")
 
     def populate_videos(self, videos):
@@ -1109,7 +1114,11 @@ class TelegramDownloadDialog(QDialog):
                 dest_path = os.path.join(dest_folder, f"{base}_{counter}{ext}")
 
         chat_id = self.config.get("telegram.chat_id")
-        self.tg_manager.download_video(chat_id, video['id'], dest_path)
+        if self.tg_manager:
+            self.tg_manager.download_video(chat_id, video['id'], dest_path)
+        else:
+            QMessageBox.critical(self, "Error", "Telegram Manager no disponible.")
+            self.btn_download.setEnabled(True)
 
     def update_progress(self, value, status):
         self.progress_bar.setValue(int(value * 100))
