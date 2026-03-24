@@ -14,6 +14,7 @@ from .journal_logic import JournalManager
 class JournalForm(QDialog):
     def __init__(self, parent=None, journal_data=None):
         super().__init__(parent)
+        self.table_name = "JournalMaterials"
         self.journal_data = journal_data or {}
         self.config = ConfigManager()
         self.setWindowIcon(QIcon(os.path.join("img", "icon.ico")))
@@ -58,10 +59,9 @@ class JournalForm(QDialog):
         self.view = QTableView()
         self.view.setModel(self.model)
 
-        # We need ColumnHeaderView if we want persistent widths, but it's internal to data_table.
-        # Let's use standard header and try to resize or just use it as is.
-        # For now, let's just use standard header to avoid importing too much or complex logic.
-        self.view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        from data_table import ColumnHeaderView
+        self.header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
+        self.view.setHorizontalHeader(self.header)
 
         self.view.setItemDelegateForColumn(1, SpinoffDelegate(self))
         self.view.setItemDelegateForColumn(2, SeasonDelegate(self))
@@ -73,6 +73,8 @@ class JournalForm(QDialog):
 
         self.layout.addWidget(QLabel("Materiales de la jornada:"))
         self.layout.addWidget(self.view)
+
+        self.apply_column_configs()
 
         # Buttons
         btn_layout = QHBoxLayout()
@@ -90,6 +92,21 @@ class JournalForm(QDialog):
         self.layout.addLayout(btn_layout)
 
         self.view.installEventFilter(self)
+
+    def apply_column_configs(self):
+        self.header._is_applying_config = True
+        for i in range(self.model.columnCount()):
+            col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
+            col_config = self.config.get_column_config(self.table_name, col_name)
+            width = col_config.get("width")
+            locked = col_config.get("locked", False)
+            if locked:
+                self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
+                self.header.resizeSection(i, width)
+            else:
+                self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+                if width: self.header.resizeSection(i, width)
+        self.header._is_applying_config = False
 
     def eventFilter(self, source, event):
         if event.type() == QEvent.Type.KeyPress and event.matches(QKeySequence.StandardKey.Paste):
