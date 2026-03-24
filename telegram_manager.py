@@ -1,7 +1,7 @@
 import os
 import asyncio
 import threading
-from PyQt6.QtCore import QObject, pyqtSignal, QThread, QMetaObject, Qt, QTimer
+from PyQt6.QtCore import QObject, pyqtSignal, QThread, QMetaObject, Qt, QTimer, QCoreApplication
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from config_manager import ConfigManager
@@ -27,6 +27,16 @@ class TelegramManager(QObject):
     def __init__(self):
         if self._initialized:
             return
+
+        # Validation: QObject must be created in the main thread
+        app = QCoreApplication.instance()
+        if app and QThread.currentThread() != app.thread():
+            # In a real app we might want to log this properly
+            print("CRITICAL: TelegramManager instantiated outside main thread!")
+            # We don't raise RuntimeError here to avoid breaking the singleton pattern
+            # if it was already initialized correctly, but we ensure the first init
+            # happens in the main thread.
+
         super().__init__()
         self.config = ConfigManager()
         self.client = None
@@ -41,7 +51,12 @@ class TelegramManager(QObject):
 
     def _emit_safe(self, signal, *args):
         """Helper to emit signals from the background thread to the GUI thread safely using QTimer."""
-        QTimer.singleShot(0, lambda: signal.emit(*args))
+        # Check if we are still alive
+        try:
+            if self is not None:
+                QTimer.singleShot(0, lambda: signal.emit(*args))
+        except (RuntimeError, ReferenceError):
+            pass # Object likely destroyed
 
     def run_coro(self, coro):
         if not self.loop or not self.loop.is_running():

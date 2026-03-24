@@ -535,10 +535,10 @@ class CatalogDelegate(QStyledItemDelegate):
         model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, tg_manager=None):
         super().__init__(parent)
         self.config = ConfigManager()
-        self.tg_manager = None # Lazy initialization
+        self.tg_manager = tg_manager
         self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.setWindowTitle("Configuración")
         self.setMinimumWidth(500)
@@ -655,8 +655,7 @@ class SettingsDialog(QDialog):
         self.layout.addWidget(self.buttons)
 
     def _init_tg_manager(self):
-        if self.tg_manager is None:
-            self.tg_manager = TelegramManager()
+        if self.tg_manager:
             try:
                 self.tg_manager.connection_status.disconnect(self.update_tg_status)
             except: pass
@@ -811,21 +810,22 @@ class DuplicateActionDialog(QDialog):
         return self.bg.checkedId(), self.apply_all_cb.isChecked()
 
 class TelegramDownloadDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, tg_manager=None):
         super().__init__(parent)
         self.config = ConfigManager()
-        self.tg_manager = TelegramManager()
+        self.tg_manager = tg_manager
 
-        # Avoid duplicate connections
-        try:
-            self.tg_manager.videos_loaded.disconnect(self.populate_videos)
-        except: pass
-        try:
-            self.tg_manager.download_progress.disconnect(self.update_progress)
-        except: pass
-        try:
-            self.tg_manager.download_finished.disconnect(self.on_download_finished)
-        except: pass
+        if self.tg_manager:
+            # Avoid duplicate connections
+            try:
+                self.tg_manager.videos_loaded.disconnect(self.populate_videos)
+            except: pass
+            try:
+                self.tg_manager.download_progress.disconnect(self.update_progress)
+            except: pass
+            try:
+                self.tg_manager.download_finished.disconnect(self.on_download_finished)
+            except: pass
 
         self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.setWindowTitle("Descargar nuevo contenido desde Telegram")

@@ -19,6 +19,7 @@ from db_manager import init_databases, GLOBAL_DB_PATH, get_yearly_db_path, BASE_
 from forms import DatabaseForm, YearRangeDialog, ReportMaterialsDialog, SettingsDialog, TelegramDownloadDialog
 from config_manager import ConfigManager
 from data_table import DataTableTab
+from telegram_manager import TelegramManager
 
 # Domain Logic Imports
 from data_migration import DataMigrator
@@ -28,6 +29,9 @@ from db_operations import DBOperations
 class PrecureManagerApp(QMainWindow):
     def __init__(self):
         super().__init__()
+        # Initialize TelegramManager in the main thread
+        self.tg_manager = TelegramManager()
+
         self.setWindowTitle("Precure Media Manager - Core System")
         self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.config = ConfigManager()
@@ -470,7 +474,7 @@ class PrecureManagerApp(QMainWindow):
             self.registry_tab.model.select()
 
     def on_tg_download_requested(self):
-        dialog = TelegramDownloadDialog(self)
+        dialog = TelegramDownloadDialog(self, self.tg_manager)
         dialog.exec()
 
     def scan_master_folders(self):
@@ -564,7 +568,7 @@ class PrecureManagerApp(QMainWindow):
             tab.unlock_all_columns()
 
     def on_settings_requested(self):
-        dialog = SettingsDialog(self)
+        dialog = SettingsDialog(self, self.tg_manager)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             # Re-apply settings
             self.config.load()
