@@ -60,15 +60,7 @@ class PrecureManagerApp(QMainWindow):
         self.is_offline = False
         self.last_device_change = 0
 
-        geometry = self.config.get("ui.geometry")
-        if geometry:
-            try:
-                self.restoreGeometry(QByteArray.fromBase64(geometry.encode()))
-            except:
-                self.setGeometry(100, 100, 1200, 800)
-        else:
-            self.setGeometry(100, 100, 1200, 800)
-
+        self.setGeometry(100, 100, 1200, 800)
         self.apply_theme(self.config.get("ui.theme", "Fusion"))
         self.init_actions()
 
@@ -136,6 +128,26 @@ class PrecureManagerApp(QMainWindow):
         self.domains_tab.update_database("global_db")
 
         self.load_settings()
+        self.restore_window_geometry_safe()
+
+    def restore_window_geometry_safe(self):
+        geometry = self.config.get("ui.geometry")
+        if not geometry:
+            return
+
+        try:
+            ba = QByteArray.fromBase64(geometry.encode())
+            # Minimum size validation for a QByteArray containing geometry
+            if ba.isEmpty() or ba.size() < 20:
+                raise ValueError("Geometry inválida o muy corta")
+
+            ok = self.restoreGeometry(ba)
+            if not ok:
+                raise ValueError("restoreGeometry falló")
+        except Exception as e:
+            print(f"Error al restaurar geometría: {e}")
+            # Fallback to default geometry if restore fails
+            self.setGeometry(100, 100, 1200, 800)
 
     def apply_theme(self, theme_name):
         if theme_name == "Dark":
@@ -168,7 +180,11 @@ class PrecureManagerApp(QMainWindow):
         super().closeEvent(event)
 
     def save_settings(self):
-        self.config.set("ui.geometry", self.saveGeometry().toBase64().data().decode())
+        if not self.isMinimized():
+            geo = self.saveGeometry()
+            if geo and not geo.isEmpty():
+                self.config.set("ui.geometry", geo.toBase64().data().decode())
+
         self.config.set("ui.sidebar_visible", self.toggle_sidebar.isChecked())
         self.config.set("ui.console_visible", self.toggle_console.isChecked())
         self.config.set("ui.auto_resize", self.auto_resize_action.isChecked())
@@ -565,10 +581,18 @@ class PrecureManagerApp(QMainWindow):
         self.seasons_tab.set_console_visible(is_visible)
         self.domains_tab.set_console_visible(is_visible)
 
+    def is_drive_ready(self, drive):
+        if not drive: return False
+        try:
+            # Check existence and attempt to list directory to ensure it's actually readable
+            return os.path.exists(drive + "\\") and os.listdir(drive + "\\") is not None
+        except:
+            return False
+
     def check_external_drive(self):
         from db_manager import BASE_DIR_PATH
         drive = os.path.splitdrive(BASE_DIR_PATH)[0]
-        if drive and os.path.exists(drive + "\\"):
+        if self.is_drive_ready(drive):
             self.is_offline = False
             self.warning_bar.setVisible(False)
         else:
@@ -576,7 +600,7 @@ class PrecureManagerApp(QMainWindow):
             self.warning_bar.setVisible(True)
 
     def init_db_connections(self):
-        from db_manager import GLOBAL_DB_PATH, get_yearly_db_path, is_on_external_drive, get_offline_db_path
+        from db_manager import GLOBAL_DB_PATH, is_on_external_drive, get_offline_db_path
 
         # Decide global path
         g_path = GLOBAL_DB_PATH
@@ -603,8 +627,14 @@ class PrecureManagerApp(QMainWindow):
         if not db_global.isOpen():
             db_global.open()
 
-        # Decide yearly path
-        y_path = get_yearly_db_path(self.get_current_year())
+        # Connect to the currently selected year
+        self.open_year_db(self.get_current_year())
+
+    def open_year_db(self, year):
+        from db_manager import get_yearly_db_path, get_offline_db_path, GLOBAL_DB_PATH, is_on_external_drive
+
+        y_path = get_yearly_db_path(year)
+        # Determine if we should use offline snapshot for this year's DB
         if self.is_offline:
             y_path = get_offline_db_path(y_path)
             y_readonly = True
@@ -626,8 +656,22 @@ class PrecureManagerApp(QMainWindow):
             db_year.setConnectOptions("")
 
         if not db_year.isOpen():
-            if db_year.open():
-                QSqlQuery(db_year).exec(f"ATTACH DATABASE '{g_path}' AS global_db")
+            if not db_year.open():
+                QMessageBox.critical(self, "Error", f"No se pudo abrir la base de datos del año {year}.")
+                return False
+
+        # Always attach global database
+        g_path = GLOBAL_DB_PATH
+        if self.is_offline and is_on_external_drive(g_path):
+            g_path = get_offline_db_path(g_path)
+
+        safe_g_path = g_path.replace("'", "''")
+        QSqlQuery(db_year).exec(f"ATTACH DATABASE '{safe_g_path}' AS global_db")
+
+        # Update tabs
+        self.resources_tab.update_database("year_db")
+        self.registry_tab.update_database("year_db")
+        return True
 
     def init_sidebar(self):
         self.dock = QDockWidget("Años", self)
@@ -647,17 +691,7 @@ class PrecureManagerApp(QMainWindow):
 
     def on_year_selected(self, index):
         year = index.data()
-        db_path = get_yearly_db_path(year)
-        db = QSqlDatabase.database("year_db")
-        db.close()
-        db.setDatabaseName(db_path)
-        if db.open():
-            from db_manager import GLOBAL_DB_PATH
-            QSqlQuery(db).exec(f"ATTACH DATABASE '{GLOBAL_DB_PATH}' AS global_db")
-            self.resources_tab.update_database("year_db")
-            self.registry_tab.update_database("year_db")
-        else:
-            QMessageBox.critical(self, "Error", f"No se pudo abrir la base de datos del año {year}.")
+        self.open_year_db(year)
 
     def get_current_year(self):
         if not hasattr(self, 'year_tree'):
@@ -666,24 +700,26 @@ class PrecureManagerApp(QMainWindow):
         return int(index.data()) if index.isValid() else 2004
 
     def nativeEvent(self, eventType, message):
-        if eventType == b"windows_generic_MSG":
-            msg = ctypes.wintypes.MSG.from_address(int(message))
-            if msg.message == 0x0219: # WM_DEVICECHANGE
-                # Debounce or just check drive existence
-                self.handle_device_change()
+        if eventType == b"windows_generic_MSG" and message:
+            try:
+                msg = ctypes.wintypes.MSG.from_address(int(message))
+                if msg.message == 0x0219: # WM_DEVICECHANGE
+                    self.handle_device_change()
+            except Exception as e:
+                print(f"Error en nativeEvent: {e}")
         return super().nativeEvent(eventType, message)
 
     def handle_device_change(self):
-        # Debounce 10 seconds
+        # Debounce 3 seconds
         now = time.time()
-        if now - self.last_device_change < 10:
+        if now - self.last_device_change < 3:
             return
         self.last_device_change = now
 
         from db_manager import BASE_DIR_PATH
         drive = os.path.splitdrive(BASE_DIR_PATH)[0]
         was_offline = self.is_offline
-        is_now_available = drive and os.path.exists(drive + "\\")
+        is_now_available = self.is_drive_ready(drive)
 
         if was_offline and is_now_available:
             self.sync_and_reconnect(offline=False)
@@ -696,19 +732,28 @@ class PrecureManagerApp(QMainWindow):
         for tab in [self.registry_tab, self.resources_tab, self.catalog_tab,
                     self.opener_tab, self.type_res_tab, self.seasons_tab, self.domains_tab]:
             if tab.model:
+                tab.view.setModel(None)
                 tab.model.deleteLater()
                 tab.model = None
 
-        db_year = QSqlDatabase.database("year_db")
+        QApplication.processEvents()
+
+        # Rule: Do not have any QSqlDatabase object in scope when calling removeDatabase
+        # We wrap it in a scope if possible, but in Python we'll just be careful.
+
+        db_year = QSqlDatabase.database("year_db", open=False)
         if db_year.isOpen():
             db_year.close()
-        # To truly remove the connection, we need to pass the connection name
+        del db_year
         QSqlDatabase.removeDatabase("year_db")
 
-        db_global = QSqlDatabase.database("global_db")
+        db_global = QSqlDatabase.database("global_db", open=False)
         if db_global.isOpen():
             db_global.close()
+        del db_global
         QSqlDatabase.removeDatabase("global_db")
+
+        QApplication.processEvents()
 
     def sync_and_reconnect(self, offline):
         # Rule of Gold: close everything before changing sources
