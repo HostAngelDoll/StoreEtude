@@ -174,6 +174,12 @@ class ColumnHeaderView(QHeaderView):
         copy_col_data = menu.addAction("Copiar datos de esta columna")
         
         # Mode check
+        main_win = None
+        for widget in QApplication.topLevelWidgets():
+            if isinstance(widget, QMainWindow):
+                main_win = widget
+                break
+
         is_year_tab = table_tab.db_conn_name == "year_db"
         is_offline = (main_win and getattr(main_win, 'state', None) and main_win.state.mode == AppMode.OFFLINE)
 

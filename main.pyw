@@ -5,7 +5,7 @@ import ctypes.wintypes
 from datetime import datetime
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTabWidget, QHBoxLayout, QTreeView,
-                             QDockWidget, QMessageBox, QProgressDialog, QStyle)
+                             QDockWidget, QMessageBox, QProgressDialog, QStyle, QDialog)
 from PyQt6.QtCore import Qt, QByteArray, QThread, QTimer
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QIcon
 from PyQt6.QtSql import QSqlDatabase
