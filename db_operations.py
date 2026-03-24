@@ -46,6 +46,7 @@ class DBOperations(QObject):
 
                 if not columns:
                     self.log_message.emit(f"No se encontraron columnas en T_Registry para el año {year}", True, "registry")
+                    q = None
                     db.close()
                     QSqlDatabase.removeDatabase(conn_name)
                     continue
@@ -53,6 +54,7 @@ class DBOperations(QObject):
                 q.exec("SELECT sql FROM sqlite_master WHERE type='table' AND name='T_Registry'")
                 if not q.next():
                     self.log_message.emit(f"No se encontró el esquema de T_Registry para el año {year}", True, "registry")
+                    q = None
                     db.close()
                     QSqlDatabase.removeDatabase(conn_name)
                     continue
@@ -81,7 +83,9 @@ class DBOperations(QObject):
                 db.rollback()
                 self.log_message.emit(f"Error en año {year}: {str(e)}", True, "registry")
             finally:
+                q = None
                 db.close()
+                db = None
                 QSqlDatabase.removeDatabase(conn_name)
 
         self.progress_changed.emit(len(years), len(years), "Finalizado.")
@@ -216,7 +220,9 @@ class DBOperations(QObject):
                     success_count += 1
             
             db.commit()
+            query = None
             db.close()
+            db = None
             QSqlDatabase.removeDatabase(conn_name)
 
         return success_count

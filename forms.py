@@ -3,13 +3,39 @@ from PyQt6.QtWidgets import (QDialog, QFormLayout, QLineEdit, QSpinBox,
                              QVBoxLayout, QHBoxLayout, QRadioButton, QButtonGroup,
                              QLabel, QWidget, QTableView, QStyledItemDelegate,
                              QApplication, QFileDialog, QGroupBox, QPushButton,
-                             QHeaderView, QTreeView)
+                             QHeaderView, QTreeView, QScrollArea, QProgressBar,
+                             QInputDialog, QListWidget, QListWidgetItem, QGridLayout)
 from PyQt6.QtSql import QSqlRelationalTableModel, QSqlRelation, QSqlTableModel, QSqlQuery, QSqlDatabase
-from PyQt6.QtCore import Qt, QEvent
-from PyQt6.QtGui import QStandardItemModel, QStandardItem, QKeySequence, QIcon
+from PyQt6.QtCore import Qt, QEvent, QUrl
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QKeySequence, QIcon, QDesktopServices
 from datetime import datetime
 import os
 from config_manager import ConfigManager
+from telegram_manager import TelegramManager
+
+class ChatSelectionDialog(QDialog):
+    def __init__(self, chats, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Seleccionar Chat")
+        self.resize(400, 500)
+        self.layout = QVBoxLayout(self)
+
+        self.list_widget = QListWidget()
+        for chat in chats:
+            item = QListWidgetItem(chat['name'])
+            item.setData(Qt.ItemDataRole.UserRole, chat)
+            self.list_widget.addItem(item)
+
+        self.layout.addWidget(self.list_widget)
+
+        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        self.buttons.accepted.connect(self.accept)
+        self.buttons.rejected.connect(self.reject)
+        self.layout.addWidget(self.buttons)
+
+    def get_selected_chat(self):
+        item = self.list_widget.currentItem()
+        return item.data(Qt.ItemDataRole.UserRole) if item else None
 
 class DatabaseForm(QDialog):
     def __init__(self, model, row=-1, parent=None):
@@ -62,8 +88,6 @@ class DatabaseForm(QDialog):
                 
                 # Ensure the relational model is populated
                 rel_model.select()
-                while rel_model.canFetchMore():
-                    rel_model.fetchMore()
                 
                 # Add a blank entry to the combo box by using a proxy or manual addition
                 # Since we want to use the model, we can add the item manually and handle indices
@@ -266,15 +290,19 @@ class ReportMaterialsDialog(QDialog):
         return super().eventFilter(source, event)
 
     def handle_paste(self):
+        index = self.view.currentIndex()
+        if not index.isValid() or index.column() != 0:
+            return
+
         clipboard = QApplication.clipboard()
         text = clipboard.text()
         if not text:
             return
 
         lines = text.splitlines()
-        current_row = self.view.currentIndex().row()
+        current_row = index.row()
         if current_row < 0:
-            current_row = self.model.rowCount()
+            current_row = 0
 
         for i, line in enumerate(lines):
             row_to_fill = current_row + i
@@ -284,6 +312,7 @@ class ReportMaterialsDialog(QDialog):
             self.model.setData(self.model.index(row_to_fill, 0), line.strip())
 
     def process_addition(self):
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         from db_operations import DBOperations
         
         materials_list = []
@@ -293,6 +322,16 @@ class ReportMaterialsDialog(QDialog):
             title = self.model.data(self.model.index(r, 4))
             
             if not dt or not season or not title:
+                continue
+
+            # Datetime validation
+            try:
+                # Expected format: "2023-01-01 03:07:00-03:32:00"
+                # We validate the first part which is a standard datetime
+                parts = str(dt).strip().split(' ')
+                if len(parts) < 2: raise ValueError()
+                datetime.strptime(parts[0], "%Y-%m-%d")
+            except:
                 continue
                 
             materials_list.append({
@@ -311,6 +350,7 @@ class ReportMaterialsDialog(QDialog):
         ops = DBOperations()
         success_count = ops.process_materials_report(materials_list)
 
+        QApplication.restoreOverrideCursor()
         QMessageBox.information(self, "Éxito", f"Se agregaron {success_count} registros correctamente.")
         self.accept()
 
@@ -323,12 +363,18 @@ class SpinoffDelegate(QStyledItemDelegate):
 
     def setEditorData(self, editor, index):
         val = index.data(Qt.ItemDataRole.EditRole)
-        idx = editor.findData(1 if val == "Sí" else 0)
+        # Normalization: handle both int/bool and "Sí"/"No" string values
+        if isinstance(val, str):
+            int_val = 1 if val == "Sí" else 0
+        else:
+            int_val = int(val or 0)
+
+        idx = editor.findData(int_val)
         editor.setCurrentIndex(idx if idx >= 0 else 0)
 
     def setModelData(self, editor, model, index):
         old_val = model.data(index, Qt.ItemDataRole.EditRole)
-        new_val = editor.currentText()
+        new_val = editor.currentText() # Stores as string "Sí"/"No" for standard staging model consistency
         model.setData(index, new_val, Qt.ItemDataRole.EditRole)
         if old_val != new_val:
             # Clear season, type_resource and title_material if is_spinoff changed
@@ -391,6 +437,8 @@ class TypeResourceDelegate(QStyledItemDelegate):
             model.setData(model.index(index.row(), 4), "", Qt.ItemDataRole.EditRole)
 
 class TitleMaterialDelegate(QStyledItemDelegate):
+    _db_cache = {}
+
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
         editor.addItem("", None)
@@ -405,13 +453,9 @@ class TitleMaterialDelegate(QStyledItemDelegate):
         q.addBindValue(season)
         if q.exec() and q.next():
             year = q.value(0)
-            from db_manager import get_yearly_db_path
-            db_path = get_yearly_db_path(year)
             
-            conn_name = f"tmp_title_db_{year}"
-            db_year = QSqlDatabase.addDatabase("QSQLITE", conn_name)
-            db_year.setDatabaseName(db_path)
-            if db_year.open():
+            db_year = self._get_cached_db(year)
+            if db_year and db_year.isOpen():
                 qy = QSqlQuery(db_year)
 
                 sql = "SELECT title_material FROM T_Resources WHERE precure_season_name = ?"
@@ -434,10 +478,27 @@ class TitleMaterialDelegate(QStyledItemDelegate):
                 if qy.exec():
                     while qy.next():
                         editor.addItem(qy.value(0))
-                db_year.close()
-            QSqlDatabase.removeDatabase(conn_name)
             
         return editor
+
+    def _get_cached_db(self, year):
+        conn_name = f"cached_title_db_{year}"
+        if conn_name in self._db_cache:
+            db = self._db_cache[conn_name]
+            if db.isOpen():
+                return db
+
+        from db_manager import get_yearly_db_path
+        db_path = get_yearly_db_path(year)
+        if not os.path.exists(db_path):
+            return None
+
+        db = QSqlDatabase.addDatabase("QSQLITE", conn_name)
+        db.setDatabaseName(db_path)
+        if db.open():
+            self._db_cache[conn_name] = db
+            return db
+        return None
 
     def setEditorData(self, editor, index):
         val = index.data(Qt.ItemDataRole.EditRole)
@@ -474,9 +535,10 @@ class CatalogDelegate(QStyledItemDelegate):
         model.setData(index, editor.currentText(), Qt.ItemDataRole.EditRole)
 
 class SettingsDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, tg_manager=None):
         super().__init__(parent)
         self.config = ConfigManager()
+        self.tg_manager = tg_manager
         self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.setWindowTitle("Configuración")
         self.setMinimumWidth(500)
@@ -543,6 +605,44 @@ class SettingsDialog(QDialog):
         ui_group.setLayout(ui_layout)
         self.layout.addWidget(ui_group)
         
+        # Telegram Settings Group
+        tg_group = QGroupBox("Telegram")
+        tg_layout = QFormLayout()
+
+        self.api_id_edit = QLineEdit(str(self.config.get("telegram.api_id", "")))
+        tg_layout.addRow("API ID:", self.api_id_edit)
+
+        self.api_hash_edit = QLineEdit(self.config.get("telegram.api_hash", ""))
+        tg_layout.addRow("API Hash:", self.api_hash_edit)
+
+        help_label = QLabel('<a href="https://my.telegram.org/">¿Dónde consigo esto?</a>')
+        help_label.setOpenExternalLinks(True)
+        tg_layout.addRow("", help_label)
+
+        self.tg_status_label = QLabel("No conectado")
+        self.btn_tg_connect = QPushButton("Conectar")
+        self.btn_tg_connect.clicked.connect(self.on_tg_main_btn_clicked)
+        self._tg_connected = False
+
+        tg_conn_layout = QHBoxLayout()
+        tg_conn_layout.addWidget(self.tg_status_label)
+        tg_conn_layout.addStretch()
+        tg_conn_layout.addWidget(self.btn_tg_connect)
+        tg_layout.addRow("Estado:", tg_conn_layout)
+
+        self.chat_name_label = QLabel(self.config.get("telegram.chat_name", "Ninguno seleccionado"))
+        self.btn_select_chat = QPushButton("Elegir Grupo/Canal")
+        self.btn_select_chat.clicked.connect(self.on_select_chat_clicked)
+
+        tg_chat_layout = QHBoxLayout()
+        tg_chat_layout.addWidget(self.chat_name_label)
+        tg_chat_layout.addStretch()
+        tg_chat_layout.addWidget(self.btn_select_chat)
+        tg_layout.addRow("Chat Destino:", tg_chat_layout)
+
+        tg_group.setLayout(tg_layout)
+        self.layout.addWidget(tg_group)
+
         # Column Management Button
         self.btn_manage_columns = QPushButton("Administrar Anchos de Columnas")
         self.btn_manage_columns.clicked.connect(self.manage_columns)
@@ -553,6 +653,73 @@ class SettingsDialog(QDialog):
         self.buttons.accepted.connect(self.validate_and_save)
         self.buttons.rejected.connect(self.reject)
         self.layout.addWidget(self.buttons)
+
+    def _init_tg_manager(self):
+        if self.tg_manager:
+            try:
+                self.tg_manager.connection_status.disconnect(self.update_tg_status)
+            except: pass
+            try:
+                self.tg_manager.auth_required.disconnect(self.handle_tg_auth)
+            except: pass
+            try:
+                self.tg_manager.chats_loaded.disconnect(self.show_chat_selection)
+            except: pass
+
+            self.tg_manager.connection_status.connect(self.update_tg_status)
+            self.tg_manager.auth_required.connect(self.handle_tg_auth)
+            self.tg_manager.chats_loaded.connect(self.show_chat_selection)
+
+    def on_tg_main_btn_clicked(self):
+        self._init_tg_manager()
+        if self._tg_connected:
+            self.tg_manager.disconnect()
+        else:
+            # Save current API credentials first
+            self.config.set("telegram.api_id", self.api_id_edit.text(), save=False)
+            self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=True)
+            self.tg_manager.connect()
+
+    def update_tg_status(self, message, connected):
+        self.tg_status_label.setText(message)
+        self._tg_connected = connected
+        self.btn_tg_connect.setText("Desconectar" if connected else "Conectar")
+
+    def handle_tg_auth(self, type):
+        self._init_tg_manager()
+        if type == "phone":
+            phone, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce tu número de teléfono (+...):")
+            if ok: self.tg_manager.submit_phone(phone)
+        elif type == "code":
+            code, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce el código de verificación:")
+            if ok: self.tg_manager.submit_code(code)
+        elif type == "password":
+            pw, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce tu contraseña 2FA:", QLineEdit.EchoMode.Password)
+            if ok: self.tg_manager.submit_password(pw)
+
+    def on_select_chat_clicked(self):
+        self._init_tg_manager()
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        self.tg_manager.fetch_chats()
+
+    def show_chat_selection(self, chats):
+        QApplication.restoreOverrideCursor()
+        dialog = ChatSelectionDialog(chats, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            chat = dialog.get_selected_chat()
+            if chat:
+                self.config.set("telegram.chat_id", chat['id'], save=False)
+                self.config.set("telegram.chat_name", chat['name'], save=True)
+                self.chat_name_label.setText(chat['name'])
+
+    def closeEvent(self, event):
+        if self.tg_manager:
+            try:
+                self.tg_manager.connection_status.disconnect(self.update_tg_status)
+                self.tg_manager.auth_required.disconnect(self.handle_tg_auth)
+                self.tg_manager.chats_loaded.disconnect(self.show_chat_selection)
+            except: pass
+        super().closeEvent(event)
 
     def browse_base_dir(self):
         dir_path = QFileDialog.getExistingDirectory(self, "Seleccionar Ruta Base", self.base_dir_edit.text())
@@ -599,7 +766,10 @@ class SettingsDialog(QDialog):
         self.config.set("ui.show_construction_logs", self.show_const_logs_cb.isChecked(), save=False)
         self.config.set("ui.sidebar_visible", self.show_sidebar_cb.isChecked(), save=False)
         self.config.set("ui.console_visible", self.show_console_cb.isChecked(), save=False)
-        self.config.set("ui.theme", self.theme_combo.currentText(), save=True) # Last one saves
+        self.config.set("ui.theme", self.theme_combo.currentText(), save=False)
+
+        self.config.set("telegram.api_id", self.api_id_edit.text(), save=False)
+        self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=True) # Last one saves
         
         self.accept()
 
@@ -638,6 +808,329 @@ class DuplicateActionDialog(QDialog):
 
     def get_choice(self):
         return self.bg.checkedId(), self.apply_all_cb.isChecked()
+
+class TelegramDownloadDialog(QDialog):
+    def __init__(self, parent=None, tg_manager=None):
+        super().__init__(parent)
+        self.config = ConfigManager()
+        self.tg_manager = tg_manager
+
+        if self.tg_manager:
+            # Avoid duplicate connections
+            try:
+                self.tg_manager.videos_loaded.disconnect(self.populate_videos)
+            except: pass
+            try:
+                self.tg_manager.download_progress.disconnect(self.update_progress)
+            except: pass
+            try:
+                self.tg_manager.download_finished.disconnect(self.on_download_finished)
+            except: pass
+
+        self.setWindowIcon(QIcon(r"img\icon.ico"))
+        self.setWindowTitle("Descargar nuevo contenido desde Telegram")
+        self.resize(800, 700)
+        self.layout = QVBoxLayout(self)
+
+        # 1. Video Selection Area
+        self.layout.addWidget(QLabel("Últimos videos del canal/grupo:"))
+        self.video_list_widget = QWidget()
+        self.video_list_layout = QVBoxLayout(self.video_list_widget)
+        self.video_scroll = QScrollArea()
+        self.video_scroll.setWidgetResizable(True)
+        self.video_scroll.setWidget(self.video_list_widget)
+        self.layout.addWidget(self.video_scroll)
+
+        # 2. Destination Selection Area
+        dest_group = QGroupBox("Destino de descarga")
+        dest_layout = QGridLayout()
+
+        dest_layout.addWidget(QLabel("Año:"), 0, 0)
+        self.year_combo = QComboBox()
+        current_year = datetime.now().year
+        for y in range(2004, current_year + 1):
+            self.year_combo.addItem(str(y))
+        self.year_combo.setCurrentText(str(current_year))
+        self.year_combo.currentTextChanged.connect(self.update_master_subfolders)
+        dest_layout.addWidget(self.year_combo, 0, 1)
+
+        dest_layout.addWidget(QLabel("Carpeta Master:"), 1, 0)
+        self.master_combo = QComboBox()
+        self.master_combo.currentTextChanged.connect(self.update_first_file_label)
+        dest_layout.addWidget(self.master_combo, 1, 1)
+
+        dest_layout.addWidget(QLabel("Primer archivo actual:"), 2, 0)
+        self.first_file_label = QLabel("N/A")
+        self.first_file_label.setStyleSheet("font-weight: bold; color: #4282da;")
+        dest_layout.addWidget(self.first_file_label, 2, 1)
+
+        dest_group.setLayout(dest_layout)
+        self.layout.addWidget(dest_group)
+
+        # 3. Renaming Area
+        self.layout.addWidget(QLabel("Opciones de renombrado:"))
+        self.rename_widget = QWidget()
+        self.rename_layout = QVBoxLayout(self.rename_widget)
+        self.rename_scroll = QScrollArea()
+        self.rename_scroll.setWidgetResizable(True)
+        self.rename_scroll.setWidget(self.rename_widget)
+        self.layout.addWidget(self.rename_scroll)
+
+        # 4. Progress and Buttons
+        self.progress_bar = QProgressBar()
+        self.layout.addWidget(self.progress_bar)
+        self.status_label = QLabel("Listo")
+        self.layout.addWidget(self.status_label)
+
+        btn_layout = QHBoxLayout()
+        self.btn_download = QPushButton("Descargar")
+        self.btn_download.clicked.connect(self.start_downloads)
+        self.btn_close = QPushButton("Cerrar")
+        self.btn_close.clicked.connect(self.reject)
+        btn_layout.addStretch()
+        btn_layout.addWidget(self.btn_download)
+        btn_layout.addWidget(self.btn_close)
+        self.layout.addLayout(btn_layout)
+
+        # Internal state
+        self.video_items = [] # List of (checkbox, message_dict, rename_checkbox, rename_input)
+        self._apply_to_all_choice = None # (choice, rename_pattern)
+
+        # Connect TG signals
+        self.tg_manager.videos_loaded.connect(self.populate_videos)
+        self.tg_manager.download_progress.connect(self.update_progress)
+        self.tg_manager.download_finished.connect(self.on_download_finished)
+
+        # Initial data
+        self.update_master_subfolders()
+        self.fetch_latest_videos()
+
+    def fetch_latest_videos(self):
+        chat_id = self.config.get("telegram.chat_id")
+        if chat_id:
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+            self.tg_manager.fetch_videos(chat_id, limit=5)
+        else:
+            QMessageBox.warning(self, "Telegram", "No se ha seleccionado un chat de destino en Configuración.")
+
+    def populate_videos(self, videos):
+        QApplication.restoreOverrideCursor()
+        # Clear current
+        while self.video_list_layout.count():
+            item = self.video_list_layout.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+        while self.rename_layout.count():
+            item = self.rename_layout.takeAt(0)
+            if item.widget(): item.widget().deleteLater()
+
+        self.video_items = []
+
+        for v in videos:
+            # Video item with checkbox
+            v_widget = QWidget()
+            v_layout = QHBoxLayout(v_widget)
+            cb = QCheckBox(f"{v['file_name']} ({v['date']})")
+            v_layout.addWidget(cb)
+            self.video_list_layout.addWidget(v_widget)
+
+            # Rename item
+            r_widget = QWidget()
+            r_layout = QHBoxLayout(r_widget)
+            msg_label = QLabel(v['text'][:50] + "..." if len(v['text']) > 50 else v['text'] or v['file_name'])
+            msg_label.setToolTip(v['text'])
+            r_layout.addWidget(msg_label, 1)
+
+            ren_cb = QCheckBox("Renombrar:")
+            r_layout.addWidget(ren_cb)
+            ren_input = QLineEdit()
+            ren_input.setPlaceholderText("Nuevo nombre de archivo...")
+            ren_input.setEnabled(False)
+            ren_cb.toggled.connect(ren_input.setEnabled)
+            r_layout.addWidget(ren_input, 2)
+
+            self.rename_layout.addWidget(r_widget)
+
+            self.video_items.append({
+                'cb': cb,
+                'video': v,
+                'ren_cb': ren_cb,
+                'ren_input': ren_input
+            })
+
+    def update_master_subfolders(self):
+        year = self.year_combo.currentText()
+        base_path = self.config.get("base_dir_path")
+        year_path = os.path.join(base_path, year)
+
+        self.master_combo.clear()
+        if os.path.exists(year_path):
+            try:
+                # Find folder with "___"
+                master_parent = None
+                for item in os.listdir(year_path):
+                    if "___" in item and os.path.isdir(os.path.join(year_path, item)):
+                        master_parent = os.path.join(year_path, item)
+                        break
+
+                if master_parent:
+                    subfolders = [d for d in os.listdir(master_parent) if os.path.isdir(os.path.join(master_parent, d))]
+                    self.master_combo.addItems(sorted(subfolders))
+            except Exception as e:
+                print(f"Error scanning master subfolders: {e}")
+
+    def update_first_file_label(self):
+        year = self.year_combo.currentText()
+        base_path = self.config.get("base_dir_path")
+        year_path = os.path.join(base_path, year)
+        master_parent = None
+        if os.path.exists(year_path):
+            try:
+                for item in os.listdir(year_path):
+                    if "___" in item and os.path.isdir(os.path.join(year_path, item)):
+                        master_parent = os.path.join(year_path, item)
+                        break
+            except Exception as e:
+                print(f"Error scanning year path: {e}")
+
+        subfolder = self.master_combo.currentText()
+        if master_parent and subfolder:
+            full_path = os.path.join(master_parent, subfolder)
+            if os.path.exists(full_path):
+                try:
+                    files = [f for f in os.listdir(full_path) if os.path.isfile(os.path.join(full_path, f))]
+                    if files:
+                        files.sort(key=lambda f: os.path.getmtime(os.path.join(full_path, f)))
+                        self.first_file_label.setText(files[0])
+                    else:
+                        self.first_file_label.setText("Vacia")
+                except Exception as e:
+                    print(f"Error scanning subfolder: {e}")
+                    self.first_file_label.setText("Error")
+            else:
+                self.first_file_label.setText("No existe")
+        else:
+            self.first_file_label.setText("N/A")
+
+    def start_downloads(self):
+        self.to_download = [item for item in self.video_items if item['cb'].isChecked()]
+        if not self.to_download:
+            QMessageBox.warning(self, "Descarga", "No hay videos seleccionados.")
+            return
+
+        self._apply_to_all_choice = None
+        self.btn_download.setEnabled(False)
+        self.download_next()
+
+    def download_next(self):
+        if not self.to_download:
+            self.status_label.setText("Todas las descargas finalizadas.")
+            self.btn_download.setEnabled(True)
+            return
+
+        self.current_item = self.to_download.pop(0)
+        video = self.current_item['video']
+
+        # Determine destination
+        year = self.year_combo.currentText()
+        base_path = self.config.get("base_dir_path")
+        year_path = os.path.join(base_path, year)
+        master_parent = None
+        if os.path.exists(year_path):
+            for item in os.listdir(year_path):
+                if "___" in item and os.path.isdir(os.path.join(year_path, item)):
+                    master_parent = os.path.join(year_path, item)
+                    break
+
+        if not master_parent:
+            QMessageBox.critical(self, "Error", f"No se encontró carpeta maestra para el año {year}")
+            self.btn_download.setEnabled(True)
+            return
+
+        dest_folder = os.path.join(master_parent, self.master_combo.currentText())
+        if not os.path.exists(dest_folder):
+            try:
+                os.makedirs(dest_folder)
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"No se pudo crear carpeta de destino: {e}")
+                self.btn_download.setEnabled(True)
+                return
+
+        filename = video['file_name']
+        if self.current_item['ren_cb'].isChecked() and self.current_item['ren_input'].text():
+            ext = os.path.splitext(filename)[1]
+            filename = self.current_item['ren_input'].text()
+            if not filename.endswith(ext):
+                filename += ext
+
+        dest_path = os.path.join(dest_folder, filename)
+
+        # Conflict Handling
+        if os.path.exists(dest_path):
+            choice = self._apply_to_all_choice
+            if choice is None:
+                msg = f"El archivo '{filename}' ya existe.\n¿Qué deseas hacer?"
+                msg_box = QMessageBox(self)
+                msg_box.setWindowTitle("Archivo existente")
+                msg_box.setText(msg)
+                msg_box.setWindowIcon(QIcon(r"img\icon.ico"))
+
+                over_btn = msg_box.addButton("Sobrescribir", QMessageBox.ButtonRole.ActionRole)
+                skip_btn = msg_box.addButton("Omitir", QMessageBox.ButtonRole.ActionRole)
+                ren_btn = msg_box.addButton("Mantener ambos (renombrar)", QMessageBox.ButtonRole.ActionRole)
+                cancel_btn = msg_box.addButton("Cancelar todo", QMessageBox.ButtonRole.RejectRole)
+
+                apply_all_cb = QCheckBox("Aplicar a todo")
+                msg_box.setCheckBox(apply_all_cb)
+
+                msg_box.exec()
+
+                if msg_box.clickedButton() == cancel_btn:
+                    self.to_download = []
+                    self.btn_download.setEnabled(True)
+                    return
+                elif msg_box.clickedButton() == over_btn:
+                    choice = "overwrite"
+                elif msg_box.clickedButton() == skip_btn:
+                    choice = "skip"
+                elif msg_box.clickedButton() == ren_btn:
+                    choice = "rename"
+
+                if apply_all_cb.isChecked():
+                    self._apply_to_all_choice = choice
+
+            if choice == "skip":
+                self.download_next()
+                return
+            elif choice == "rename":
+                base, ext = os.path.splitext(filename)
+                counter = 1
+                while os.path.exists(os.path.join(dest_folder, f"{base}_{counter}{ext}")):
+                    counter += 1
+                dest_path = os.path.join(dest_folder, f"{base}_{counter}{ext}")
+
+        chat_id = self.config.get("telegram.chat_id")
+        self.tg_manager.download_video(chat_id, video['id'], dest_path)
+
+    def update_progress(self, value, status):
+        self.progress_bar.setValue(int(value * 100))
+        self.status_label.setText(status)
+
+    def on_download_finished(self, success, message):
+        if not self.isVisible():
+            return
+        if success:
+            self.download_next()
+        else:
+            QMessageBox.critical(self, "Error de descarga", f"Error al descargar: {message}")
+            self.btn_download.setEnabled(True)
+
+    def closeEvent(self, event):
+        try:
+            self.tg_manager.videos_loaded.disconnect(self.populate_videos)
+            self.tg_manager.download_progress.disconnect(self.update_progress)
+            self.tg_manager.download_finished.disconnect(self.on_download_finished)
+        except: pass
+        super().closeEvent(event)
 
 class ColumnManagementDialog(QDialog):
     def __init__(self, parent=None):
