@@ -987,12 +987,15 @@ class TelegramDownloadDialog(QDialog):
             r_layout.addWidget(ren_input, 2)
 
             self.rename_layout.addWidget(r_widget)
+            r_widget.hide() # Hide by default
+            cb.toggled.connect(r_widget.setVisible) # Only show if selected for download
 
             self.video_items.append({
                 'cb': cb,
                 'video': v,
                 'ren_cb': ren_cb,
-                'ren_input': ren_input
+                'ren_input': ren_input,
+                'rename_widget': r_widget
             })
 
     def update_master_subfolders(self):
