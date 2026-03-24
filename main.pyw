@@ -26,6 +26,8 @@ from ui.warning_bar import OfflineWarningBar
 from dialogs import (DatabaseForm, YearRangeDialog, ReportMaterialsDialog,
                      SettingsDialog, TelegramDownloadDialog, DuplicateActionDialog)
 
+from journals_manager.journal_gui import JournalAdminDialog
+
 # Domain Logic Imports
 from data_migration import DataMigrator
 from resource_management import ResourceScanner
@@ -154,6 +156,10 @@ class PrecureManagerApp(QMainWindow):
 
     def on_tg_download_requested(self):
         dialog = TelegramDownloadDialog(self, self.tg_manager)
+        dialog.exec()
+
+    def on_manage_journals_requested(self):
+        dialog = JournalAdminDialog(self)
         dialog.exec()
 
     def scan_master_folders(self):
@@ -616,8 +622,16 @@ class PrecureManagerApp(QMainWindow):
         is_offline = self.state.mode == AppMode.OFFLINE
         current_tab = self.tabs.currentWidget()
 
-        # Tools menu - always disabled in offline
-        self.actions.tools_menu.setEnabled(not is_offline)
+        # Tools menu - restricted in offline but Journals allowed
+        if is_offline:
+            for action in self.actions.tools_menu.actions():
+                if action == self.actions.manage_journals_action:
+                    action.setEnabled(True)
+                else:
+                    action.setEnabled(False)
+        else:
+            for action in self.actions.tools_menu.actions():
+                action.setEnabled(True)
 
         # Edit menu - restricted in offline
         if is_offline:
