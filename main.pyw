@@ -135,10 +135,14 @@ class PrecureManagerApp(QMainWindow):
         self.tabs.addTab(self.resources_tab, "Recursos")
         self.tabs.addTab(self.global_tab_container, "Global")
 
+        self.tabs.currentChanged.connect(self.update_menu_states)
+        self.global_subtabs.currentChanged.connect(self.update_menu_states)
+
     def _init_menu(self):
         from ui.actions import ActionsManager
         self.actions = ActionsManager(self)
         self.actions.setup_menu(self.menuBar())
+        self.update_menu_states()
 
     def on_report_materials_requested(self):
         if self.state.mode == AppMode.OFFLINE:
@@ -550,6 +554,7 @@ class PrecureManagerApp(QMainWindow):
 
     def finish_reconnect(self, progress_dialog):
         self.init_db_connections()
+        self.update_menu_states()
         progress_dialog.close()
 
     def run_startup_sync(self, callback=None):
@@ -604,6 +609,32 @@ class PrecureManagerApp(QMainWindow):
     def toggle_sql_consoles(self, visible):
         for tab in self.all_tabs:
             tab.set_console_visible(visible)
+
+    def update_menu_states(self):
+        if not hasattr(self, 'actions'): return
+
+        is_offline = self.state.mode == AppMode.OFFLINE
+        current_tab = self.tabs.currentWidget()
+
+        # Tools menu - always disabled in offline
+        self.actions.tools_menu.setEnabled(not is_offline)
+
+        # Edit menu - restricted in offline
+        if is_offline:
+            # Only "Añadir Fila" enabled if in Global tab
+            self.actions.edit_menu.setEnabled(True) # Keep menu enabled to see actions
+
+            is_global_active = (current_tab == self.global_tab_container)
+
+            for action in self.actions.edit_menu.actions():
+                if action == self.actions.add_row_action:
+                    action.setEnabled(is_global_active)
+                else:
+                    action.setEnabled(False)
+        else:
+            self.actions.edit_menu.setEnabled(True)
+            for action in self.actions.edit_menu.actions():
+                action.setEnabled(True)
 
     def closeEvent(self, event):
         self.save_settings()
