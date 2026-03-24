@@ -538,7 +538,7 @@ class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.config = ConfigManager()
-        self.tg_manager = TelegramManager()
+        self.tg_manager = None # Lazy initialization
         self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.setWindowTitle("Configuración")
         self.setMinimumWidth(500)
@@ -654,12 +654,15 @@ class SettingsDialog(QDialog):
         self.buttons.rejected.connect(self.reject)
         self.layout.addWidget(self.buttons)
 
-        # Connect TG signals
-        self.tg_manager.connection_status.connect(self.update_tg_status)
-        self.tg_manager.auth_required.connect(self.handle_tg_auth)
-        self.tg_manager.chats_loaded.connect(self.show_chat_selection)
+    def _init_tg_manager(self):
+        if self.tg_manager is None:
+            self.tg_manager = TelegramManager()
+            self.tg_manager.connection_status.connect(self.update_tg_status)
+            self.tg_manager.auth_required.connect(self.handle_tg_auth)
+            self.tg_manager.chats_loaded.connect(self.show_chat_selection)
 
     def on_tg_main_btn_clicked(self):
+        self._init_tg_manager()
         if self._tg_connected:
             self.tg_manager.disconnect()
         else:
@@ -674,6 +677,7 @@ class SettingsDialog(QDialog):
         self.btn_tg_connect.setText("Desconectar" if connected else "Conectar")
 
     def handle_tg_auth(self, type):
+        self._init_tg_manager()
         if type == "phone":
             phone, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce tu número de teléfono (+...):")
             if ok: self.tg_manager.submit_phone(phone)
@@ -685,6 +689,7 @@ class SettingsDialog(QDialog):
             if ok: self.tg_manager.submit_password(pw)
 
     def on_select_chat_clicked(self):
+        self._init_tg_manager()
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         self.tg_manager.fetch_chats()
 

@@ -1,7 +1,6 @@
 import os
 import asyncio
-import threading
-from PyQt6.QtCore import QObject, pyqtSignal
+from PyQt6.QtCore import QObject, pyqtSignal, QThread
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from config_manager import ConfigManager
@@ -29,21 +28,26 @@ class TelegramManager(QObject):
         self.config = ConfigManager()
         self.client = None
         self.loop = asyncio.new_event_loop()
-        self.thread = threading.Thread(target=self._run_loop, daemon=True)
-        self.thread.start()
+
+        # Using QThread for better integration with Qt event loop and signals
+        self.worker_thread = TelegramWorkerThread(self.loop)
+        self.worker_thread.start()
 
         self._auth_future = None
         self._initialized = True
 
-    def _run_loop(self):
-        asyncio.set_event_loop(self.loop)
-        try:
-            self.loop.run_forever()
-        except Exception as e:
-            print(f"TelegramManager loop error: {e}")
-
     def run_coro(self, coro):
-        return asyncio.run_coroutine_threadsafe(coro, self.loop)
+        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
+
+        def handle_result(f):
+            try:
+                f.result()
+            except Exception as e:
+                print(f"TelegramManager Coroutine error: {e}")
+                # We could emit a signal here if we want the UI to know about generic errors
+
+        future.add_done_callback(handle_result)
+        return future
 
     async def _get_client(self):
         api_id = self.config.get("telegram.api_id")
@@ -198,3 +202,27 @@ class TelegramManager(QObject):
             self.run_coro(self.client.disconnect())
             self.client = None
             self.connection_status.emit("Desconectado", False)
+
+    def shutdown(self):
+        """Cleanly shutdown the loop and thread."""
+        if self.client:
+            asyncio.run_coroutine_threadsafe(self.client.disconnect(), self.loop)
+
+        if self.loop.is_running():
+            self.loop.call_soon_threadsafe(self.loop.stop)
+
+        if self.worker_thread.isRunning():
+            self.worker_thread.quit()
+            self.worker_thread.wait(1000)
+
+class TelegramWorkerThread(QThread):
+    def __init__(self, loop):
+        super().__init__()
+        self.loop = loop
+
+    def run(self):
+        asyncio.set_event_loop(self.loop)
+        try:
+            self.loop.run_forever()
+        except Exception as e:
+            print(f"TelegramManager loop error: {e}")

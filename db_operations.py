@@ -85,6 +85,7 @@ class DBOperations(QObject):
             finally:
                 q = None
                 db.close()
+                db = None
                 QSqlDatabase.removeDatabase(conn_name)
 
         self.progress_changed.emit(len(years), len(years), "Finalizado.")
@@ -221,6 +222,7 @@ class DBOperations(QObject):
             db.commit()
             query = None
             db.close()
+            db = None
             QSqlDatabase.removeDatabase(conn_name)
 
         return success_count

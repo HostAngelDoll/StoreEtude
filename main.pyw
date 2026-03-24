@@ -121,6 +121,10 @@ class PrecureManagerApp(QMainWindow):
 
     def closeEvent(self, event):
         self.save_settings()
+        # Shutdown TelegramManager if it was instantiated
+        from telegram_manager import TelegramManager
+        if TelegramManager._instance:
+            TelegramManager().shutdown()
         super().closeEvent(event)
 
     def save_settings(self):
