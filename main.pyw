@@ -147,9 +147,6 @@ class PrecureManagerApp(QMainWindow):
         self.update_menu_states()
 
     def on_report_materials_requested(self):
-        if self.state.mode == AppMode.OFFLINE:
-            QMessageBox.warning(self, "Reportar Materiales", "No se pueden reportar materiales en modo solo lectura.")
-            return
         dialog = ReportMaterialsDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.registry_tab.model.select()

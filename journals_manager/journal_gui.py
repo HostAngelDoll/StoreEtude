@@ -99,13 +99,12 @@ class JournalForm(QDialog):
             col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
             col_config = self.config.get_column_config(self.table_name, col_name)
             width = col_config.get("width")
-            locked = col_config.get("locked", False)
-            if locked:
-                self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
+
+            # Use Interactive to allow manual resizing as per user's bug report fix
+            self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+            if width:
                 self.header.resizeSection(i, width)
-            else:
-                self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-                if width: self.header.resizeSection(i, width)
+        self.header.setStretchLastSection(True)
         self.header._is_applying_config = False
 
     def eventFilter(self, source, event):
@@ -173,11 +172,12 @@ class JournalForm(QDialog):
         self.accept()
 
 class JournalAdminDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, selection_mode=False):
         super().__init__(parent)
+        self.selection_mode = selection_mode
         self.mgr = JournalManager()
         self.setWindowIcon(QIcon(os.path.join("img", "icon.ico")))
-        self.setWindowTitle("Administrar Jornadas")
+        self.setWindowTitle("Administrar Jornadas" if not selection_mode else "Seleccionar Jornadas para Importar")
         self.resize(800, 600)
         self.layout = QVBoxLayout(self)
 
@@ -198,25 +198,38 @@ class JournalAdminDialog(QDialog):
 
         # Buttons
         btn_layout = QHBoxLayout()
-        self.btn_add = QPushButton("Añadir")
-        self.btn_add.clicked.connect(self.on_add)
+        if not self.selection_mode:
+            self.btn_add = QPushButton("Añadir")
+            self.btn_add.clicked.connect(self.on_add)
 
-        self.btn_toggle = QPushButton("Marcar como Borrador/Activo")
-        self.btn_toggle.clicked.connect(self.on_toggle)
-        self.btn_toggle.setEnabled(False)
+            self.btn_toggle = QPushButton("Marcar como Borrador/Activo")
+            self.btn_toggle.clicked.connect(self.on_toggle)
+            self.btn_toggle.setEnabled(False)
 
-        self.btn_edit = QPushButton("Editar")
-        self.btn_edit.clicked.connect(self.on_edit)
-        self.btn_edit.setEnabled(False)
+            self.btn_edit = QPushButton("Editar")
+            self.btn_edit.clicked.connect(self.on_edit)
+            self.btn_edit.setEnabled(False)
 
-        self.btn_delete = QPushButton("Eliminar")
-        self.btn_delete.clicked.connect(self.on_delete)
-        self.btn_delete.setEnabled(False)
+            self.btn_delete = QPushButton("Eliminar")
+            self.btn_delete.clicked.connect(self.on_delete)
+            self.btn_delete.setEnabled(False)
 
-        btn_layout.addWidget(self.btn_add)
-        btn_layout.addWidget(self.btn_toggle)
-        btn_layout.addWidget(self.btn_edit)
-        btn_layout.addWidget(self.btn_delete)
+            btn_layout.addWidget(self.btn_add)
+            btn_layout.addWidget(self.btn_toggle)
+            btn_layout.addWidget(self.btn_edit)
+            btn_layout.addWidget(self.btn_delete)
+        else:
+            self.btn_import = QPushButton("Importar")
+            self.btn_import.clicked.connect(self.accept)
+            self.btn_import.setEnabled(False)
+
+            self.btn_cancel = QPushButton("Cancelar")
+            self.btn_cancel.clicked.connect(self.reject)
+
+            btn_layout.addStretch()
+            btn_layout.addWidget(self.btn_import)
+            btn_layout.addWidget(self.btn_cancel)
+
         self.layout.addLayout(btn_layout)
 
         self.refresh_lists()
@@ -227,6 +240,7 @@ class JournalAdminDialog(QDialog):
         list_widget = QListWidget()
         list_widget.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         list_widget.itemSelectionChanged.connect(self.update_button_states)
+        list_widget.itemChanged.connect(self.update_button_states)
         list_widget.itemDoubleClicked.connect(self.on_edit)
         layout.addWidget(list_widget)
         setattr(self, f"list_{name.lower()}", list_widget)
@@ -259,18 +273,26 @@ class JournalAdminDialog(QDialog):
     def update_button_states(self):
         current_list = self._get_current_list()
         selected_items = current_list.selectedItems()
-        checked_items = self._get_checked_items(current_list)
 
-        any_selected = len(selected_items) > 0
-        any_checked = len(checked_items) > 0
+        if not self.selection_mode:
+            checked_items = self._get_checked_items(current_list)
+            any_checked = len(checked_items) > 0
 
-        # Requirement 14: botón editar deshabilitado si no hay selección
-        self.btn_edit.setEnabled(len(selected_items) == 1)
+            # Requirement 14: botón editar deshabilitado si no hay selección
+            self.btn_edit.setEnabled(len(selected_items) == 1)
 
-        # toggle and delete apply to CHECKED items as per requirement 3.i
-        # "los checkboxes serviran para administrarlos al presionar el boton 'eliminar' o 'marcar como borrador/activo'"
-        self.btn_toggle.setEnabled(any_checked)
-        self.btn_delete.setEnabled(any_checked)
+            # toggle and delete apply to CHECKED items as per requirement 3.i
+            # "los checkboxes serviran para administrarlos al presionar el boton 'eliminar' o 'marcar como borrador/activo'"
+            self.btn_toggle.setEnabled(any_checked)
+            self.btn_delete.setEnabled(any_checked)
+        else:
+            # In selection mode, check all tabs for any checked items to enable 'Importar'
+            any_checked = False
+            for list_widget in [self.list_pendientes, self.list_borradores, self.list_vencidos]:
+                if any(list_widget.item(i).checkState() == Qt.CheckState.Checked for i in range(list_widget.count())):
+                    any_checked = True
+                    break
+            self.btn_import.setEnabled(any_checked)
 
     def _get_current_list(self):
         idx = self.tabs.currentIndex()
@@ -311,6 +333,15 @@ class JournalAdminDialog(QDialog):
             self.mgr.toggle_state(data['id'])
 
         self.refresh_lists()
+
+    def get_selected_journals_data(self):
+        selected_data = []
+        for list_widget in [self.list_pendientes, self.list_borradores, self.list_vencidos]:
+            for i in range(list_widget.count()):
+                item = list_widget.item(i)
+                if item.checkState() == Qt.CheckState.Checked:
+                    selected_data.append(item.data(Qt.ItemDataRole.UserRole))
+        return selected_data
 
     def on_delete(self):
         current_list = self._get_current_list()
