@@ -42,6 +42,7 @@ class SettingsDialog(QDialog):
         self.config_path_edit = QLineEdit(self.config.config_path)
         self.config_path_edit.setReadOnly(True)
         self.btn_move_config = QPushButton("Cambiar/Mover JSON")
+        self.btn_move_config.setToolTip("Al cambiar la ruta, el archivo config.json, cache.json, sesiones de telegram y la carpeta de jornadas se moverán a la nueva ubicación.")
         self.btn_move_config.clicked.connect(self.move_config_json)
         config_h_layout = QHBoxLayout()
         config_h_layout.addWidget(self.config_path_edit)

@@ -180,8 +180,16 @@ class ColumnHeaderView(QHeaderView):
                 main_win = widget
                 break
 
-        is_year_tab = table_tab.db_conn_name == "year_db"
+        is_year_tab = getattr(table_tab, 'db_conn_name', None) == "year_db"
         is_offline = (main_win and getattr(main_win, 'state', None) and main_win.state.mode == AppMode.OFFLINE)
+
+        # JournalForm and other non-DB forms should not allow schema changes
+        is_db_tab = isinstance(table_tab, DataTableTab)
+        if not is_db_tab:
+            add_left.setVisible(False)
+            add_right.setVisible(False)
+            rename_col.setVisible(False)
+            delete_col.setVisible(False)
 
         if is_year_tab and is_offline:
             add_left.setEnabled(False)

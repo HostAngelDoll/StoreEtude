@@ -204,6 +204,11 @@ class ConfigManager:
             if os.path.exists(old_offline_dir):
                 shutil.move(old_offline_dir, os.path.join(new_dir, "offline_dbs"))
 
+            # Move journals if they exist
+            old_journals_dir = os.path.join(old_dir, "journals")
+            if os.path.exists(old_journals_dir):
+                shutil.move(old_journals_dir, os.path.join(new_dir, "journals"))
+
             # Update paths in memory
             self.config_path = new_path
             self.config_dir = new_dir

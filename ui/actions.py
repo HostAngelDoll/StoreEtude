@@ -64,6 +64,9 @@ class ActionsManager:
         self.tg_download_action = QAction("Descargar nuevo contenido desde telegram", self.win)
         self.tg_download_action.triggered.connect(self.win.on_tg_download_requested)
 
+        self.manage_journals_action = QAction("Administrar Jornadas", self.win)
+        self.manage_journals_action.triggered.connect(self.win.on_manage_journals_requested)
+
         # Vista
         self.toggle_sidebar = QAction("Años", self.win, checkable=True)
         self.toggle_sidebar.setChecked(True)
@@ -113,6 +116,8 @@ class ActionsManager:
         self.tools_menu.addAction(self.scan_new_sd_action)
         self.tools_menu.addAction(self.report_materials_action)
         self.tools_menu.addAction(self.tg_download_action)
+        self.tools_menu.addSeparator()
+        self.tools_menu.addAction(self.manage_journals_action)
 
         view_menu = menubar.addMenu("Vista")
         panels_submenu = view_menu.addMenu("Mostrar Paneles")
