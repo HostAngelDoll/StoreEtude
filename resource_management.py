@@ -1,11 +1,11 @@
 import os
 import re
+import sqlite3
 import subprocess
 import time
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal, QCoreApplication
-from PyQt6.QtSql import QSqlDatabase, QSqlQuery
-from db_manager import BASE_DIR_PATH, get_yearly_db_path
+from db_manager import BASE_DIR_PATH, get_yearly_db_path, GLOBAL_DB_PATH
 
 class ResourceScanner(QObject):
     progress_changed = pyqtSignal(int, int, str)
@@ -42,12 +42,13 @@ class ResourceScanner(QObject):
         if not os.path.exists(BASE_DIR_PATH):
             return
 
-        db_global = QSqlDatabase.database("global_db")
+        conn_global = sqlite3.connect(GLOBAL_DB_PATH)
+        cursor_global = conn_global.cursor()
+
         type_ids = {}
-        q = QSqlQuery(db_global)
-        q.exec("SELECT idx, type_resource FROM T_Type_Resources")
-        while q.next():
-            type_ids[q.value(1)] = q.value(0)
+        cursor_global.execute("SELECT idx, type_resource FROM T_Type_Resources")
+        for row in cursor_global.fetchall():
+            type_ids[row[1]] = row[0]
 
         for i, year in enumerate(years):
             if self._cancel_requested:
@@ -58,61 +59,54 @@ class ResourceScanner(QObject):
             self.log_message.emit(f"Escaneando recursos para el año {year}...", False, "resources")
 
             seasons_info = []
-            sq = QSqlQuery(db_global)
-            sq.prepare("SELECT precure_season_name, is_spinoff, episode_total, path_master FROM T_Seasons WHERE year = ?")
-            sq.addBindValue(year)
-            if sq.exec():
-                while sq.next():
-                    seasons_info.append({
-                        'name': sq.value(0),
-                        'is_spinoff': bool(sq.value(1)),
-                        'ep_total': sq.value(2) or 0,
-                        'path_master': sq.value(3)
-                    })
+            cursor_global.execute("SELECT precure_season_name, is_spinoff, episode_total, path_master FROM T_Seasons WHERE year = ?", (year,))
+            for row in cursor_global.fetchall():
+                seasons_info.append({
+                    'name': row[0],
+                    'is_spinoff': bool(row[1]),
+                    'ep_total': row[2] or 0,
+                    'path_master': row[3]
+                })
 
-            if not seasons_info:
-                continue
+            if not seasons_info: continue
 
             master_path = os.path.join(BASE_DIR_PATH, str(year), seasons_info[0]['path_master'] or "")
-            if not os.path.exists(master_path):
-                continue
+            if not os.path.exists(master_path): continue
 
-            db_year_conn = f"scan_db_{year}"
             db_year_path = get_yearly_db_path(year)
-            db_year = QSqlDatabase.addDatabase("QSQLITE", db_year_conn)
-            db_year.setDatabaseName(db_year_path)
-            if not db_year.open():
-                continue
+            conn_year = sqlite3.connect(db_year_path)
 
             try:
                 self.log_message.emit(f"--- Fase 1: Episodios de Temporada ({year}) ---", False, "resources")
                 for s in [si for si in seasons_info if not si['is_spinoff']]:
                     if self._cancel_requested: break
-                    self.process_season_episodes(db_year, master_path, type_ids, s, overwrite, False)
+                    self.process_season_episodes(conn_year, master_path, type_ids, s, overwrite, False)
                 
                 self.log_message.emit(f"--- Fase 2: Episodios Spinoff ({year}) ---", False, "resources")
                 for s in [si for si in seasons_info if si['is_spinoff']]:
                     if self._cancel_requested: break
-                    self.process_season_episodes(db_year, master_path, type_ids, s, overwrite, True)
+                    self.process_season_episodes(conn_year, master_path, type_ids, s, overwrite, True)
                 
                 self.log_message.emit(f"--- Fase 3: Películas y Especiales ({year}) ---", False, "resources")
                 for s in seasons_info:
                     if self._cancel_requested: break
-                    self.process_movies(db_year, master_path, type_ids, s, overwrite)
+                    self.process_movies(conn_year, master_path, type_ids, s, overwrite)
                 
                 self.log_message.emit(f"--- Fase 4: Soundtracks y Letras ({year}) ---", False, "resources")
                 if not self._cancel_requested:
-                    self.process_soundtracks(db_year, master_path, type_ids, overwrite)
+                    self.process_soundtracks(conn_year, master_path, type_ids, overwrite)
+
+                conn_year.commit()
             except Exception as e:
                 self.log_message.emit(f"Error año {year}: {e}", True, "resources")
             finally:
-                db_year.close()
-                QSqlDatabase.removeDatabase(db_year_conn)
+                conn_year.close()
 
+        conn_global.close()
         self.progress_changed.emit(len(years), len(years), "Escaneo completado.")
         self.finished.emit()
 
-    def process_season_episodes(self, db, master_path, type_ids, season_info, overwrite, is_spinoff=False):
+    def process_season_episodes(self, conn, master_path, type_ids, season_info, overwrite, is_spinoff=False):
         season_name = season_info['name']
         ep_total = season_info['ep_total']
 
@@ -148,35 +142,31 @@ class ResourceScanner(QObject):
             if len(files) != ep_total and ep_total > 0 and not is_active_season:
                 self.warning_emitted.emit("Advertencia", f"Temporada {season_name}: Se encontraron {len(files)} archivos, se esperaban {ep_total}.")
 
-            self.link_season_files(db, target_folder, files, type_ids, overwrite, season_name)
+            self.link_season_files(conn, target_folder, files, type_ids, overwrite, season_name)
         else:
             self.log_message.emit(f"No se encontró carpeta para {keyword} en {season_name}.", True, "resources")
 
-    def link_season_files(self, db, folder_path, files, type_ids, overwrite, season_name):
+    def link_season_files(self, conn, folder_path, files, type_ids, overwrite, season_name):
         ep_type_id = type_ids.get("Episodio")
         ep_sp_type_id = type_ids.get("Ep Sp")
 
-        query = QSqlQuery(db)
+        cursor = conn.cursor()
         sql = "SELECT title_material, ep_num, ep_sp_num, type_material FROM T_Resources WHERE precure_season_name = ? AND type_material IN (?, ?)"
         if not overwrite:
             sql += " AND (relative_path_of_file IS NULL OR relative_path_of_file = '')"
 
-        query.prepare(sql)
-        query.addBindValue(season_name)
-        query.addBindValue(ep_type_id)
-        query.addBindValue(ep_sp_type_id)
-        if not query.exec():
-            return
+        cursor.execute(sql, (season_name, ep_type_id, ep_sp_type_id))
+        rows = cursor.fetchall()
 
         updates = []
         used_files = set()
         folder_name = os.path.basename(folder_path)
 
-        while query.next():
-            title = query.value(0)
-            ep_num = query.value(1)
-            ep_sp_num = query.value(2)
-            t_mat = query.value(3)
+        for row in rows:
+            title = row[0]
+            ep_num = row[1]
+            ep_sp_num = row[2]
+            t_mat = row[3]
 
             target_num = ep_num if t_mat == ep_type_id else ep_sp_num
             if target_num is None:
@@ -197,52 +187,34 @@ class ResourceScanner(QObject):
             duration = self.get_file_duration(full_path)
             dt_str = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime('%Y-%m-%d %H:%M:%S')
 
-            upd = QSqlQuery(db)
-            upd.prepare("UPDATE T_Resources SET relative_path_of_file = ?, duration_file = ?, datetime_download = ? WHERE title_material = ?")
-            upd.addBindValue(f"{folder_name}/{filename}")
-            upd.addBindValue(duration)
-            upd.addBindValue(dt_str)
-            upd.addBindValue(title)
-            upd.exec()
+            cursor.execute("UPDATE T_Resources SET relative_path_of_file = ?, duration_file = ?, datetime_download = ? WHERE title_material = ?",
+                           (f"{folder_name}/{filename}", duration, dt_str, title))
 
-    def process_movies(self, db, master_path, type_ids, season_info, overwrite):
+    def process_movies(self, conn, master_path, type_ids, season_info, overwrite):
         season_name = season_info['name']
         movie_types = ["Pelicula Temp", "All Stars", "Cortometraje", "Espetaculo"]
         movie_type_ids = [type_ids.get(t) for t in movie_types if type_ids.get(t)]
-        if not movie_type_ids:
-            return
+        if not movie_type_ids: return
 
         movie_folders = []
         keywords = ["e_movie", "all stars", "cortometraje", "espetaculo"]
         for item in os.listdir(master_path):
             if os.path.isdir(p := os.path.join(master_path, item)) and any(kw in item.lower() for kw in keywords):
                 movie_folders.append(item)
-
         movie_folders.sort()
-        if not movie_folders:
-            return
+        if not movie_folders: return
 
-        query = QSqlQuery(db)
+        cursor = conn.cursor()
         sql = f"SELECT title_material FROM T_Resources WHERE type_material IN ({','.join(['?']*len(movie_type_ids))}) AND precure_season_name = ?"
         if not overwrite:
             sql += " AND (relative_path_of_file IS NULL OR relative_path_of_file = '')"
         sql += " ORDER BY released_utc_09 ASC"
 
-        query.prepare(sql)
-        for tid in movie_type_ids:
-            query.addBindValue(tid)
-        query.addBindValue(season_name)
-        if not query.exec():
-            return
+        cursor.execute(sql, (*movie_type_ids, season_name))
+        records = [row[0] for row in cursor.fetchall()]
+        if not records: return
 
-        records = []
-        while query.next():
-            records.append(query.value(0))
-
-        if not records:
-            return
-
-        self.log_message.emit(f"Vinculando {len(records)} películas/especiales para {season_name}...", False, "resources")
+        self.log_message.emit(f"Vinculando {len(records)} películas/especiales for {season_name}...", False, "resources")
         for i in range(min(len(records), len(movie_folders))):
             if self._cancel_requested: break
             title = records[i]
@@ -256,24 +228,18 @@ class ResourceScanner(QObject):
                 duration = self.get_file_duration(full_path)
                 dt_str = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime('%Y-%m-%d %H:%M:%S')
 
-                upd = QSqlQuery(db)
-                upd.prepare("UPDATE T_Resources SET relative_path_of_file = ?, duration_file = ?, datetime_download = ? WHERE title_material = ?")
-                upd.addBindValue(f"{folder_name}/{filename}")
-                upd.addBindValue(duration)
-                upd.addBindValue(dt_str)
-                upd.addBindValue(title)
-                upd.exec()
+                cursor.execute("UPDATE T_Resources SET relative_path_of_file = ?, duration_file = ?, datetime_download = ? WHERE title_material = ?",
+                               (f"{folder_name}/{filename}", duration, dt_str, title))
 
     def scan_new_soundtracks_lyrics(self, years):
-        if not os.path.exists(BASE_DIR_PATH):
-            return
+        if not os.path.exists(BASE_DIR_PATH): return
 
-        db_global = QSqlDatabase.database("global_db")
+        conn_global = sqlite3.connect(GLOBAL_DB_PATH)
+        cursor_global = conn_global.cursor()
+
         type_ids = {}
-        q = QSqlQuery(db_global)
-        q.exec("SELECT idx, type_resource FROM T_Type_Resources")
-        while q.next():
-            type_ids[q.value(1)] = q.value(0)
+        cursor_global.execute("SELECT idx, type_resource FROM T_Type_Resources")
+        for row in cursor_global.fetchall(): type_ids[row[1]] = row[0]
 
         sd_type_id = type_ids.get("Soundtrack")
         self._duplicate_choice = None
@@ -281,227 +247,140 @@ class ResourceScanner(QObject):
         self._last_action = 0
 
         for i, year in enumerate(years):
-            if self._cancel_requested:
-                break
-
+            if self._cancel_requested: break
             self.progress_changed.emit(i, len(years), f"Procesando año {year}...")
             self.log_message.emit(f"Buscando nuevas soundtracks para el año {year}...", False, "resources")
 
-            # Get main season
-            season_name = None
-            sq = QSqlQuery(db_global)
-            sq.prepare("SELECT precure_season_name, path_master FROM T_Seasons WHERE year = ? AND is_spinoff = 0")
-            sq.addBindValue(year)
-            if sq.exec() and sq.next():
-                season_name = sq.value(0)
-                path_master = sq.value(1)
-            else:
-                continue
+            cursor_global.execute("SELECT precure_season_name, path_master FROM T_Seasons WHERE year = ? AND is_spinoff = 0", (year,))
+            row = cursor_global.fetchone()
+            if not row: continue
+            season_name, path_master = row
 
             master_path = os.path.join(BASE_DIR_PATH, str(year), path_master or "")
-            if not os.path.exists(master_path):
-                continue
+            if not os.path.exists(master_path): continue
 
-            sd_folder_name = None
-            ly_folder_name = None
+            sd_folder_name = ly_folder_name = None
             for item in os.listdir(master_path):
                 if os.path.isdir(os.path.join(master_path, item)):
-                    if "soundtrack" in item.lower():
-                        sd_folder_name = item
-                    elif "lyrics" in item.lower():
-                        ly_folder_name = item
-
-            if not sd_folder_name or not ly_folder_name:
-                self.log_message.emit(f"Año {year}: No se encontraron ambas carpetas (soundtrack y lyrics).", True, "resources")
-                continue
+                    if "soundtrack" in item.lower(): sd_folder_name = item
+                    elif "lyrics" in item.lower(): ly_folder_name = item
+            if not sd_folder_name or not ly_folder_name: continue
 
             sd_folder = os.path.join(master_path, sd_folder_name)
             ly_folder = os.path.join(master_path, ly_folder_name)
 
-            db_year_conn = f"scan_sd_db_{year}"
             db_year_path = get_yearly_db_path(year)
-            db_year = QSqlDatabase.addDatabase("QSQLITE", db_year_conn)
-            db_year.setDatabaseName(db_year_path)
-            if not db_year.open():
-                continue
+            conn_year = sqlite3.connect(db_year_path)
+            cursor_year = conn_year.cursor()
 
             try:
                 sd_files = {os.path.splitext(f)[0]: f for f in os.listdir(sd_folder) if self.is_valid_file(f, ('.mp3', '.mp4', '.m4a'))}
                 ly_files = {os.path.splitext(f)[0]: f for f in os.listdir(ly_folder) if self.is_valid_file(f)}
-
                 common_names = set(sd_files.keys()) & set(ly_files.keys())
 
                 for title in sorted(common_names):
                     if self._cancel_requested: break
-
-                    # Check if already exists
-                    check_q = QSqlQuery(db_year)
-                    check_q.prepare("SELECT COUNT(*) FROM T_Resources WHERE title_material = ?")
-                    check_q.addBindValue(title)
-                    exists = False
-                    if check_q.exec() and check_q.next():
-                        exists = check_q.value(0) > 0
-
-                    action = 0 # 0: Omit, 1: Update Paths, 2: Replace
+                    cursor_year.execute("SELECT COUNT(*) FROM T_Resources WHERE title_material = ?", (title,))
+                    exists = cursor_year.fetchone()[0] > 0
+                    action = 0
                     if exists:
-                        if self._apply_all_duplicate:
-                            action = self._last_action
+                        if self._apply_all_duplicate: action = self._last_action
                         else:
                             self._duplicate_choice = None
                             self.request_duplicate_action.emit(title)
-
                             while self._duplicate_choice is None:
-                                QCoreApplication.processEvents()
                                 time.sleep(0.01)
                                 if self._cancel_requested: break
-
-                            if self._duplicate_choice is None:
-                                break
-
+                            if self._duplicate_choice is None: break
                             action, self._apply_all_duplicate = self._duplicate_choice
                             self._last_action = action
+                        if action == 0: continue
 
-                        if action == 0: # Omit
-                            self.log_message.emit(f"Omitiendo duplicado: {title}", False, "resources")
-                            continue
-
-                    filename_sd = sd_files[title]
-                    filename_ly = ly_files[title]
+                    filename_sd = sd_files[title]; filename_ly = ly_files[title]
                     full_path_sd = os.path.join(sd_folder, filename_sd)
                     duration = self.get_file_duration(full_path_sd)
                     dt_str = datetime.fromtimestamp(os.path.getmtime(full_path_sd)).strftime('%Y-%m-%d %H:%M:%S')
 
                     if not exists:
-                        self.log_message.emit(f"Añadiendo nueva soundtrack: {title}", False, "resources")
-                        ins = QSqlQuery(db_year)
-                        ins.prepare("""
+                        cursor_year.execute("""
                             INSERT INTO T_Resources (
                                 title_material, type_material, precure_season_name,
                                 duration_file, datetime_download,
                                 relative_path_of_soundtracks, relative_path_of_lyrics
                             ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """)
-                        ins.addBindValue(title)
-                        ins.addBindValue(sd_type_id)
-                        ins.addBindValue(season_name)
-                        ins.addBindValue(duration)
-                        ins.addBindValue(dt_str)
-                        ins.addBindValue(f"{sd_folder_name}/{filename_sd}")
-                        ins.addBindValue(f"{ly_folder_name}/{filename_ly}")
-                        if not ins.exec():
-                            self.log_message.emit(f"Error al insertar {title}: {ins.lastError().text()}", True, "resources")
+                        """, (title, sd_type_id, season_name, duration, dt_str, f"{sd_folder_name}/{filename_sd}", f"{ly_folder_name}/{filename_ly}"))
                     else:
-                        if action == 1: # Update Paths
-                            self.log_message.emit(f"Actualizando rutas de soundtrack: {title}", False, "resources")
-                            upd = QSqlQuery(db_year)
-                            upd.prepare("UPDATE T_Resources SET relative_path_of_soundtracks = ?, relative_path_of_lyrics = ? WHERE title_material = ?")
-                            upd.addBindValue(f"{sd_folder_name}/{filename_sd}")
-                            upd.addBindValue(f"{ly_folder_name}/{filename_ly}")
-                            upd.addBindValue(title)
-                            upd.exec()
-                        elif action == 2: # Replace
-                            self.log_message.emit(f"Reemplazando metadatos de soundtrack: {title}", False, "resources")
-                            upd = QSqlQuery(db_year)
-                            upd.prepare("""
+                        if action == 1:
+                            cursor_year.execute("UPDATE T_Resources SET relative_path_of_soundtracks = ?, relative_path_of_lyrics = ? WHERE title_material = ?",
+                                                (f"{sd_folder_name}/{filename_sd}", f"{ly_folder_name}/{filename_ly}", title))
+                        elif action == 2:
+                            cursor_year.execute("""
                                 UPDATE T_Resources SET
                                     type_material = ?, precure_season_name = ?,
                                     duration_file = ?, datetime_download = ?,
                                     relative_path_of_soundtracks = ?, relative_path_of_lyrics = ?,
                                     relative_path_of_file = NULL
                                 WHERE title_material = ?
-                            """)
-                            upd.addBindValue(sd_type_id)
-                            upd.addBindValue(season_name)
-                            upd.addBindValue(duration)
-                            upd.addBindValue(dt_str)
-                            upd.addBindValue(f"{sd_folder_name}/{filename_sd}")
-                            upd.addBindValue(f"{ly_folder_name}/{filename_ly}")
-                            upd.addBindValue(title)
-                            upd.exec()
+                            """, (sd_type_id, season_name, duration, dt_str, f"{sd_folder_name}/{filename_sd}", f"{ly_folder_name}/{filename_ly}", title))
 
+                conn_year.commit()
             except Exception as e:
                 self.log_message.emit(f"Error año {year}: {e}", True, "resources")
             finally:
-                db_year.close()
-                QSqlDatabase.removeDatabase(db_year_conn)
+                conn_year.close()
 
+        conn_global.close()
         self.progress_changed.emit(len(years), len(years), "Búsqueda completada.")
         self.finished.emit()
 
     def set_duplicate_choice(self, choice, apply_all):
         self._duplicate_choice = (choice, apply_all)
 
-    def process_soundtracks(self, db, master_path, type_ids, overwrite):
+    def process_soundtracks(self, conn, master_path, type_ids, overwrite):
         sd_types = ["Soundtrack", "Soundtrack Sp"]
         sd_type_ids = [type_ids.get(t) for t in sd_types if type_ids.get(t)]
-        if not sd_type_ids:
-            return
+        if not sd_type_ids: return
 
-        sd_folder_name = None
-        ly_folder_name = None
+        sd_folder_name = ly_folder_name = None
         for item in os.listdir(master_path):
             if os.path.isdir(os.path.join(master_path, item)):
-                if "soundtrack" in item.lower():
-                    sd_folder_name = item
-                elif "lyrics" in item.lower():
-                    ly_folder_name = item
-
-        if not sd_folder_name:
-            self.log_message.emit("Carpeta de soundtracks no encontrada.", True, "resources")
-            return
+                if "soundtrack" in item.lower(): sd_folder_name = item
+                elif "lyrics" in item.lower(): ly_folder_name = item
+        if not sd_folder_name: return
 
         sd_folder = os.path.join(master_path, sd_folder_name)
         ly_folder = os.path.join(master_path, ly_folder_name) if ly_folder_name else None
 
-        query = QSqlQuery(db)
+        cursor = conn.cursor()
         sql = f"SELECT title_material FROM T_Resources WHERE type_material IN ({','.join(['?']*len(sd_type_ids))})"
         if not overwrite:
             sql += " AND (relative_path_of_soundtracks IS NULL OR relative_path_of_soundtracks = '')"
 
-        query.prepare(sql)
-        for tid in sd_type_ids:
-            query.addBindValue(tid)
-        if not query.exec():
-            return
+        cursor.execute(sql, sd_type_ids)
+        titles = [row[0] for row in cursor.fetchall()]
 
-        while query.next():
+        for title in titles:
             if self._cancel_requested: break
-            title = str(query.value(0)).strip()
+            title = str(title).strip()
             found_sd = None
             for f in os.listdir(sd_folder):
-                if not self.is_valid_file(f):
-                    continue
+                if not self.is_valid_file(f): continue
                 base, ext = os.path.splitext(f)
                 if base.strip() == title and ext.lower() in ['.mp3', '.mp4', '.m4a']:
-                    found_sd = f
-                    break
+                    found_sd = f; break
 
             found_ly = None
             if ly_folder and os.path.exists(ly_folder):
                 for f in os.listdir(ly_folder):
-                    if not self.is_valid_file(f):
-                        continue
+                    if not self.is_valid_file(f): continue
                     base, ext = os.path.splitext(f)
-                    if base.strip() == title:
-                        found_ly = f
-                        break
+                    if base.strip() == title: found_ly = f; break
 
             if found_sd:
-                self.log_message.emit(f"Vinculando soundtrack: {found_sd}", False, "resources")
                 full_path = os.path.join(sd_folder, found_sd)
                 duration = self.get_file_duration(full_path)
                 dt_str = datetime.fromtimestamp(os.path.getmtime(full_path)).strftime('%Y-%m-%d %H:%M:%S')
-
-                upd = QSqlQuery(db)
-                upd.prepare("UPDATE T_Resources SET relative_path_of_soundtracks = ?, relative_path_of_lyrics = ?, relative_path_of_file = NULL, duration_file = ?, datetime_download = ? WHERE title_material = ?")
-                upd.addBindValue(f"{sd_folder_name}/{found_sd}")
-                upd.addBindValue(f"{ly_folder_name}/{found_ly}" if found_ly else None)
-                upd.addBindValue(duration)
-                upd.addBindValue(dt_str)
-                upd.addBindValue(title)
-                upd.exec()
+                cursor.execute("UPDATE T_Resources SET relative_path_of_soundtracks = ?, relative_path_of_lyrics = ?, relative_path_of_file = NULL, duration_file = ?, datetime_download = ? WHERE title_material = ?",
+                               (f"{sd_folder_name}/{found_sd}", f"{ly_folder_name}/{found_ly}" if found_ly else None, duration, dt_str, title))
             elif overwrite:
-                upd = QSqlQuery(db)
-                upd.prepare("UPDATE T_Resources SET relative_path_of_file = NULL WHERE title_material = ?")
-                upd.addBindValue(title)
-                upd.exec()
+                cursor.execute("UPDATE T_Resources SET relative_path_of_file = NULL WHERE title_material = ?", (title,))

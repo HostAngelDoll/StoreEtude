@@ -15,8 +15,9 @@ from PyQt6.QtSql import (QSqlTableModel, QSqlRelationalTableModel, QSqlRelation,
                          QSqlRelationalDelegate, QSqlQuery, QSqlDatabase)
 from PyQt6.QtWidgets import QStyledItemDelegate, QComboBox
 
-from forms import DatabaseForm
+from dialogs.database_form import DatabaseForm
 from filter_widget import FilterMenu
+from core.app_state import AppMode
 from db_manager import SQL_DIR
 
 class ComboDelegate(QStyledItemDelegate):
@@ -172,6 +173,22 @@ class ColumnHeaderView(QHeaderView):
         copy_col_name = menu.addAction("Copiar nombre de esta columna")
         copy_col_data = menu.addAction("Copiar datos de esta columna")
         
+        # Mode check
+        main_win = None
+        for widget in QApplication.topLevelWidgets():
+            if isinstance(widget, QMainWindow):
+                main_win = widget
+                break
+
+        is_year_tab = table_tab.db_conn_name == "year_db"
+        is_offline = (main_win and getattr(main_win, 'state', None) and main_win.state.mode == AppMode.OFFLINE)
+
+        if is_year_tab and is_offline:
+            add_left.setEnabled(False)
+            add_right.setEnabled(False)
+            rename_col.setEnabled(False)
+            delete_col.setEnabled(False)
+
         action = menu.exec(self.mapToGlobal(pos))
         if not action:
             return
@@ -204,7 +221,8 @@ class DataTableTab(QWidget):
         self.view = QTableView()
         self.model = None
         self.init_ui_components()
-        self.update_database(db_conn_name)
+        # We NO LONGER call update_database here to avoid opening DB
+        # before the main application is ready.
 
     def init_ui_components(self):
         # CRUD Buttons
@@ -752,6 +770,10 @@ class DataTableTab(QWidget):
         
         if not db.isOpen():
             const_log("ERROR: La base de datos no está abierta.")
+            # Set a dummy model to avoid crashes if it's referenced
+            if hasattr(self, 'model') and self.model:
+                self.model.deleteLater()
+                self.model = None
             return
 
         # Disable updates during swap to prevent artifacts
@@ -762,10 +784,21 @@ class DataTableTab(QWidget):
         if main_win and hasattr(main_win, 'auto_resize_action'):
             auto_resize = main_win.auto_resize_action.isChecked()
 
+        # Is DB ReadOnly?
+        is_year_tab = db_conn_name == "year_db"
+        is_offline = (main_win and getattr(main_win, 'state', None) and main_win.state.mode == AppMode.OFFLINE)
+        is_readonly = "mode=ro" in db.databaseName().lower() or (is_year_tab and is_offline)
+
+        self.btn_add.setEnabled(not is_readonly)
+        self.btn_edit.setEnabled(not is_readonly)
+        self.btn_delete.setEnabled(not is_readonly)
+        self.btn_run_sql.setEnabled(not (is_year_tab and is_offline))
+
         try:
             # 1. Clean up old model (keep view for now to avoid layout collapse)
             if hasattr(self, 'model') and self.model:
                 self.model.deleteLater()
+                self.model = None
                 const_log("Modelo anterior liberado.")
 
             # 2. Create new model
