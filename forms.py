@@ -619,10 +619,10 @@ class SettingsDialog(QDialog):
         help_label.setOpenExternalLinks(True)
         tg_layout.addRow("", help_label)
 
-        self.tg_status_label = QLabel("No conectado")
-        self.btn_tg_connect = QPushButton("Conectar")
+        self.tg_status_label = QLabel(self.tg_manager.get_last_status() if self.tg_manager else "No disponible")
+        self._tg_connected = self.tg_manager.is_connected() if self.tg_manager else False
+        self.btn_tg_connect = QPushButton("Desconectar" if self._tg_connected else "Conectar")
         self.btn_tg_connect.clicked.connect(self.on_tg_main_btn_clicked)
-        self._tg_connected = False
 
         tg_conn_layout = QHBoxLayout()
         tg_conn_layout.addWidget(self.tg_status_label)
@@ -643,16 +643,25 @@ class SettingsDialog(QDialog):
         tg_group.setLayout(tg_layout)
         self.layout.addWidget(tg_group)
 
-        # Column Management Button
+        # Advanced/Management Area
+        mgmt_layout = QHBoxLayout()
         self.btn_manage_columns = QPushButton("Administrar Anchos de Columnas")
         self.btn_manage_columns.clicked.connect(self.manage_columns)
-        self.layout.addWidget(self.btn_manage_columns)
+        mgmt_layout.addWidget(self.btn_manage_columns)
+
+        self.btn_clear_cache = QPushButton("Limpiar Caché de Archivos")
+        self.btn_clear_cache.clicked.connect(self.clear_file_cache)
+        mgmt_layout.addWidget(self.btn_clear_cache)
+        self.layout.addLayout(mgmt_layout)
         
         # Buttons
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.buttons.accepted.connect(self.validate_and_save)
         self.buttons.rejected.connect(self.reject)
         self.layout.addWidget(self.buttons)
+
+        # Initial signal connection
+        self._init_tg_manager()
 
     def _init_tg_manager(self):
         if self.tg_manager:
@@ -674,18 +683,26 @@ class SettingsDialog(QDialog):
         self._init_tg_manager()
         if self._tg_connected:
             self.tg_manager.disconnect()
-        else:
+        elif not self.tg_manager.is_connecting():
             # Save current API credentials first
             self.config.set("telegram.api_id", self.api_id_edit.text(), save=False)
             self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=True)
+            # Ensure we start from a clean state if credentials changed
+            self.tg_manager.disconnect()
             self.tg_manager.connect()
 
     def update_tg_status(self, message, connected):
         self.tg_status_label.setText(message)
         self._tg_connected = connected
-        self.btn_tg_connect.setText("Desconectar" if connected else "Conectar")
+        if self.tg_manager and self.tg_manager.is_connecting():
+            self.btn_tg_connect.setText("Conectando...")
+            self.btn_tg_connect.setEnabled(False)
+        else:
+            self.btn_tg_connect.setText("Desconectar" if connected else "Conectar")
+            self.btn_tg_connect.setEnabled(True)
 
     def handle_tg_auth(self, type):
+        if not self.tg_manager: return
         self._init_tg_manager()
         if type == "phone":
             phone, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce tu número de teléfono (+...):")
@@ -698,6 +715,9 @@ class SettingsDialog(QDialog):
             if ok: self.tg_manager.submit_password(pw)
 
     def on_select_chat_clicked(self):
+        if not self.tg_manager:
+            QMessageBox.critical(self, "Error", "Telegram Manager no disponible.")
+            return
         self._init_tg_manager()
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         self.tg_manager.fetch_chats()
@@ -741,6 +761,13 @@ class SettingsDialog(QDialog):
     def manage_columns(self):
         dialog = ColumnManagementDialog(self)
         dialog.exec()
+
+    def clear_file_cache(self):
+        res = QMessageBox.question(self, "Limpiar Caché", "¿Deseas borrar el historial de primeros archivos detectados?",
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if res == QMessageBox.StandardButton.Yes:
+            self.config.clear_cache("first_files")
+            QMessageBox.information(self, "Limpiar Caché", "Caché borrada correctamente.")
 
     def validate_and_save(self):
         base_path = self.base_dir_edit.text()
@@ -883,6 +910,10 @@ class TelegramDownloadDialog(QDialog):
         self.layout.addWidget(self.status_label)
 
         btn_layout = QHBoxLayout()
+        self.btn_reload = QPushButton("Recargar")
+        self.btn_reload.clicked.connect(self.fetch_latest_videos)
+        btn_layout.addWidget(self.btn_reload)
+
         self.btn_download = QPushButton("Descargar")
         self.btn_download.clicked.connect(self.start_downloads)
         self.btn_close = QPushButton("Cerrar")
@@ -896,10 +927,17 @@ class TelegramDownloadDialog(QDialog):
         self.video_items = [] # List of (checkbox, message_dict, rename_checkbox, rename_input)
         self._apply_to_all_choice = None # (choice, rename_pattern)
 
+        # Ensure cache for first files in subfolders is initialized
+        if self.config.get_cache("first_files") is None:
+            self.config.set_cache("first_files", {})
+
         # Connect TG signals
-        self.tg_manager.videos_loaded.connect(self.populate_videos)
-        self.tg_manager.download_progress.connect(self.update_progress)
-        self.tg_manager.download_finished.connect(self.on_download_finished)
+        if self.tg_manager:
+            self.tg_manager.videos_loaded.connect(self.populate_videos)
+            self.tg_manager.download_progress.connect(self.update_progress)
+            self.tg_manager.download_finished.connect(self.on_download_finished)
+            self.tg_manager.connection_status.connect(self.on_connection_status_changed)
+            self.tg_manager.auth_required.connect(self.handle_tg_auth)
 
         # Initial data
         self.update_master_subfolders()
@@ -907,10 +945,10 @@ class TelegramDownloadDialog(QDialog):
 
     def fetch_latest_videos(self):
         chat_id = self.config.get("telegram.chat_id")
-        if chat_id:
+        if chat_id and self.tg_manager:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             self.tg_manager.fetch_videos(chat_id, limit=5)
-        else:
+        elif not chat_id:
             QMessageBox.warning(self, "Telegram", "No se ha seleccionado un chat de destino en Configuración.")
 
     def populate_videos(self, videos):
@@ -949,12 +987,15 @@ class TelegramDownloadDialog(QDialog):
             r_layout.addWidget(ren_input, 2)
 
             self.rename_layout.addWidget(r_widget)
+            r_widget.hide() # Hide by default
+            cb.toggled.connect(r_widget.setVisible) # Only show if selected for download
 
             self.video_items.append({
                 'cb': cb,
                 'video': v,
                 'ren_cb': ren_cb,
-                'ren_input': ren_input
+                'ren_input': ren_input,
+                'rename_widget': r_widget
             })
 
     def update_master_subfolders(self):
@@ -980,6 +1021,19 @@ class TelegramDownloadDialog(QDialog):
 
     def update_first_file_label(self):
         year = self.year_combo.currentText()
+        subfolder = self.master_combo.currentText()
+
+        if not subfolder:
+            self.first_file_label.setText("N/A")
+            return
+
+        # Try to get from cache first
+        cache_key = f"{year}_{subfolder}"
+        cache = self.config.get_cache("first_files", {})
+        if cache_key in cache:
+            self.first_file_label.setText(cache[cache_key])
+            return
+
         base_path = self.config.get("base_dir_path")
         year_path = os.path.join(base_path, year)
         master_parent = None
@@ -992,15 +1046,18 @@ class TelegramDownloadDialog(QDialog):
             except Exception as e:
                 print(f"Error scanning year path: {e}")
 
-        subfolder = self.master_combo.currentText()
         if master_parent and subfolder:
             full_path = os.path.join(master_parent, subfolder)
             if os.path.exists(full_path):
                 try:
                     files = [f for f in os.listdir(full_path) if os.path.isfile(os.path.join(full_path, f))]
                     if files:
-                        files.sort(key=lambda f: os.path.getmtime(os.path.join(full_path, f)))
-                        self.first_file_label.setText(files[0])
+                        files.sort() # Alphabetical sorting
+                        first_file = files[0]
+                        self.first_file_label.setText(first_file)
+                        # Save to cache
+                        cache[cache_key] = first_file
+                        self.config.set_cache("first_files", cache)
                     else:
                         self.first_file_label.setText("Vacia")
                 except Exception as e:
@@ -1109,7 +1166,11 @@ class TelegramDownloadDialog(QDialog):
                 dest_path = os.path.join(dest_folder, f"{base}_{counter}{ext}")
 
         chat_id = self.config.get("telegram.chat_id")
-        self.tg_manager.download_video(chat_id, video['id'], dest_path)
+        if self.tg_manager:
+            self.tg_manager.download_video(chat_id, video['id'], dest_path)
+        else:
+            QMessageBox.critical(self, "Error", "Telegram Manager no disponible.")
+            self.btn_download.setEnabled(True)
 
     def update_progress(self, value, status):
         self.progress_bar.setValue(int(value * 100))
@@ -1124,11 +1185,31 @@ class TelegramDownloadDialog(QDialog):
             QMessageBox.critical(self, "Error de descarga", f"Error al descargar: {message}")
             self.btn_download.setEnabled(True)
 
+    def on_connection_status_changed(self, message, connected):
+        self.status_label.setText(message)
+        # If successfully connected and we have no videos yet, auto-fetch
+        if connected and not self.video_items:
+            self.fetch_latest_videos()
+
+    def handle_tg_auth(self, type):
+        if not self.isVisible(): return
+        if type == "phone":
+            phone, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce tu número de teléfono (+...):")
+            if ok: self.tg_manager.submit_phone(phone)
+        elif type == "code":
+            code, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce el código de verificación:")
+            if ok: self.tg_manager.submit_code(code)
+        elif type == "password":
+            pw, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce tu contraseña 2FA:", QLineEdit.EchoMode.Password)
+            if ok: self.tg_manager.submit_password(pw)
+
     def closeEvent(self, event):
         try:
             self.tg_manager.videos_loaded.disconnect(self.populate_videos)
             self.tg_manager.download_progress.disconnect(self.update_progress)
             self.tg_manager.download_finished.disconnect(self.on_download_finished)
+            self.tg_manager.connection_status.disconnect(self.on_connection_status_changed)
+            self.tg_manager.auth_required.disconnect(self.handle_tg_auth)
         except: pass
         super().closeEvent(event)
 

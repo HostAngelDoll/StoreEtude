@@ -24,6 +24,7 @@ from data_table import DataTableTab
 from data_migration import DataMigrator
 from resource_management import ResourceScanner
 from db_operations import DBOperations
+from telegram_manager import TelegramManager
 
 class PrecureManagerApp(QMainWindow):
     def __init__(self):
@@ -31,6 +32,7 @@ class PrecureManagerApp(QMainWindow):
         self.setWindowTitle("Precure Media Manager - Core System")
         self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.config = ConfigManager()
+        self.tg_manager = TelegramManager()
 
         geometry = self.config.get("ui.geometry")
         if geometry:
@@ -121,6 +123,8 @@ class PrecureManagerApp(QMainWindow):
 
     def closeEvent(self, event):
         self.save_settings()
+        if hasattr(self, 'tg_manager'):
+            self.tg_manager.shutdown()
         super().closeEvent(event)
 
     def save_settings(self):
@@ -466,7 +470,7 @@ class PrecureManagerApp(QMainWindow):
             self.registry_tab.model.select()
 
     def on_tg_download_requested(self):
-        dialog = TelegramDownloadDialog(self)
+        dialog = TelegramDownloadDialog(self, self.tg_manager)
         dialog.exec()
 
     def scan_master_folders(self):
@@ -560,13 +564,18 @@ class PrecureManagerApp(QMainWindow):
             tab.unlock_all_columns()
 
     def on_settings_requested(self):
-        dialog = SettingsDialog(self)
+        dialog = SettingsDialog(self, self.tg_manager)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             # Re-apply settings
             self.config.load()
             refresh_config_paths()
             self.apply_theme(self.config.get("ui.theme"))
             self.load_settings()
+
+            # Re-initialize Telegram manager to pick up moved session or new credentials
+            if hasattr(self, 'tg_manager'):
+                self.tg_manager.reset_client()
+
             # If the DB path changed, we might need to reconnect
             self.init_db_connections()
             # Reconstruct global tabs to use new connection/path
