@@ -1,5 +1,5 @@
-from PyQt6.QtGui import QAction, QMessageBox
-from PyQt6.QtWidgets import QMenu, QApplication, QProgressDialog, QDialog
+from PyQt6.QtGui import QAction
+from PyQt6.QtWidgets import QMenu, QApplication, QProgressDialog, QDialog, QMessageBox
 from PyQt6.QtCore import Qt, QThread
 import os
 
