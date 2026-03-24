@@ -1,79 +1,94 @@
 import os
 import asyncio
 import threading
-from PyQt6.QtCore import QObject, pyqtSignal, QThread, QMetaObject, Qt, QTimer, QCoreApplication
+
+from PyQt6.QtCore import QObject, pyqtSignal, QThread, QCoreApplication
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from config_manager import ConfigManager
 
+
+class TelegramLoopThread(QThread):
+    """
+    Hilo dedicado para ejecutar un event loop de asyncio.
+    No usa el event loop de Qt; solo hospeda asyncio.
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.loop = None
+        self._ready = threading.Event()
+
+    def run(self):
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        self._ready.set()
+
+        try:
+            self.loop.run_forever()
+        finally:
+            try:
+                pending = asyncio.all_tasks(self.loop)
+                for task in pending:
+                    task.cancel()
+
+                if pending:
+                    self.loop.run_until_complete(
+                        asyncio.gather(*pending, return_exceptions=True)
+                    )
+            except Exception:
+                pass
+            finally:
+                try:
+                    self.loop.close()
+                except Exception:
+                    pass
+
+    def wait_until_ready(self, timeout=3.0):
+        return self._ready.wait(timeout)
+
+    def submit(self, coro):
+        if not self.loop or not self.loop.is_running():
+            raise RuntimeError("El event loop de Telegram no está activo.")
+        return asyncio.run_coroutine_threadsafe(coro, self.loop)
+
+    def stop_loop(self):
+        if self.loop and self.loop.is_running():
+            self.loop.call_soon_threadsafe(self.loop.stop)
+
+
 class TelegramManager(QObject):
     connection_status = pyqtSignal(str, bool)
-    auth_required = pyqtSignal(str)  # "phone", "code", "password"
+    auth_required = pyqtSignal(str)          # "phone", "code", "password"
     chats_loaded = pyqtSignal(list)
     videos_loaded = pyqtSignal(list)
     download_progress = pyqtSignal(float, str)
     download_finished = pyqtSignal(bool, str)
 
-    _instance = None
-    _lock = threading.Lock()
+    def __init__(self, parent=None):
+        super().__init__(parent)
 
-    def __new__(cls):
-        with cls._lock:
-            if cls._instance is None:
-                cls._instance = super(TelegramManager, cls).__new__(cls)
-                cls._instance._initialized = False
-            return cls._instance
-
-    def __init__(self):
-        if self._initialized:
-            return
-
-        # Validation: QObject must be created in the main thread
         app = QCoreApplication.instance()
-        if app and QThread.currentThread() != app.thread():
-            # In a real app we might want to log this properly
-            print("CRITICAL: TelegramManager instantiated outside main thread!")
-            # We don't raise RuntimeError here to avoid breaking the singleton pattern
-            # if it was already initialized correctly, but we ensure the first init
-            # happens in the main thread.
+        if app is not None and QThread.currentThread() != app.thread():
+            raise RuntimeError("TelegramManager debe instanciarse en el hilo principal de Qt.")
 
-        super().__init__()
         self.config = ConfigManager()
         self.client = None
-        self.loop = asyncio.new_event_loop()
+        self._current_phone = None
+        self._phone_code_hash = None
 
-        # Using QThread for better integration with Qt event loop and signals
-        self.worker_thread = TelegramWorkerThread(self.loop)
+        self.worker_thread = TelegramLoopThread()
         self.worker_thread.start()
 
-        self._auth_future = None
-        self._initialized = True
+        if not self.worker_thread.wait_until_ready(3.0):
+            raise RuntimeError("No se pudo iniciar el hilo de Telegram a tiempo.")
 
-    def _emit_safe(self, signal, *args):
-        """Helper to emit signals from the background thread to the GUI thread safely using QTimer."""
-        # Check if we are still alive
+    def _submit(self, coro):
         try:
-            if self is not None:
-                QTimer.singleShot(0, lambda: signal.emit(*args))
-        except (RuntimeError, ReferenceError):
-            pass # Object likely destroyed
-
-    def run_coro(self, coro):
-        if not self.loop or not self.loop.is_running():
-            print("TelegramManager Coroutine error: asyncio loop is not running.")
+            return self.worker_thread.submit(coro)
+        except Exception as e:
+            self.connection_status.emit(f"Error interno: {e}", False)
             return None
-
-        future = asyncio.run_coroutine_threadsafe(coro, self.loop)
-
-        def handle_result(f):
-            try:
-                f.result()
-            except Exception as e:
-                print(f"TelegramManager Coroutine error: {e}")
-                self._emit_safe(self.connection_status, f"Error interno: {str(e)}", False)
-
-        future.add_done_callback(handle_result)
-        return future
 
     async def _get_client(self):
         api_id = self.config.get("telegram.api_id")
@@ -91,15 +106,16 @@ class TelegramManager(QObject):
 
         if self.client is None:
             self.client = TelegramClient(session_path, api_id_int, api_hash)
+
         return self.client
 
     def connect(self):
-        self.run_coro(self._connect_async())
+        self._submit(self._connect_async())
 
     async def _connect_async(self):
         client = await self._get_client()
         if not client:
-            self.connection_status.emit("Faltan API ID/Hash", False)
+            self.connection_status.emit("Faltan API ID / API Hash", False)
             return
 
         try:
@@ -107,79 +123,100 @@ class TelegramManager(QObject):
                 await client.connect()
 
             if not await client.is_user_authorized():
-                # We use a simplified sign in flow to handle UI interaction
-                self._emit_safe(self.auth_required, "phone")
+                self.auth_required.emit("phone")
                 return
 
             me = await client.get_me()
-            name = (me.first_name or "") + (" " + me.last_name if me.last_name else "")
-            self._emit_safe(self.connection_status, f"Conectado como {name}", True)
+            name = ((me.first_name or "") + (" " + me.last_name if me.last_name else "")).strip()
+            self.connection_status.emit(f"Conectado como {name or 'usuario'}", True)
+
         except Exception as e:
-            self._emit_safe(self.connection_status, f"Error: {str(e)}", False)
+            self.connection_status.emit(f"Error al conectar: {e}", False)
 
     def submit_phone(self, phone):
-        self.run_coro(self._submit_phone_async(phone))
+        self._submit(self._submit_phone_async(phone))
 
     async def _submit_phone_async(self, phone):
         client = await self._get_client()
+        if not client:
+            self.connection_status.emit("Cliente no disponible", False)
+            return
+
         try:
-            self._phone_code_hash = (await client.send_code_request(phone)).phone_code_hash
+            result = await client.send_code_request(phone)
+            self._phone_code_hash = result.phone_code_hash
             self._current_phone = phone
-            self._emit_safe(self.auth_required, "code")
+            self.auth_required.emit("code")
         except Exception as e:
-            self._emit_safe(self.connection_status, f"Error (phone): {str(e)}", False)
+            self.connection_status.emit(f"Error al enviar código: {e}", False)
 
     def submit_code(self, code):
-        self.run_coro(self._submit_code_async(code))
+        self._submit(self._submit_code_async(code))
 
     async def _submit_code_async(self, code):
         client = await self._get_client()
+        if not client:
+            self.connection_status.emit("Cliente no disponible", False)
+            return
+
         try:
-            await client.sign_in(self._current_phone, code, phone_code_hash=self._phone_code_hash)
+            await client.sign_in(
+                phone=self._current_phone,
+                code=code,
+                phone_code_hash=self._phone_code_hash
+            )
             await self._connect_async()
         except SessionPasswordNeededError:
-            self._emit_safe(self.auth_required, "password")
+            self.auth_required.emit("password")
         except Exception as e:
-            self._emit_safe(self.connection_status, f"Error (code): {str(e)}", False)
+            self.connection_status.emit(f"Error al validar código: {e}", False)
 
     def submit_password(self, password):
-        self.run_coro(self._submit_password_async(password))
+        self._submit(self._submit_password_async(password))
 
     async def _submit_password_async(self, password):
         client = await self._get_client()
+        if not client:
+            self.connection_status.emit("Cliente no disponible", False)
+            return
+
         try:
             await client.sign_in(password=password)
             await self._connect_async()
         except Exception as e:
-            self._emit_safe(self.connection_status, f"Error (pw): {str(e)}", False)
+            self.connection_status.emit(f"Error al validar contraseña: {e}", False)
 
     def fetch_chats(self):
-        self.run_coro(self._fetch_chats_async())
+        self._submit(self._fetch_chats_async())
 
     async def _fetch_chats_async(self):
         client = await self._get_client()
         if not client or not await client.is_user_authorized():
+            self.connection_status.emit("No autorizado", False)
             return
 
         try:
             dialogs = await client.get_dialogs()
             chat_list = []
+
             for d in dialogs:
                 chat_list.append({
-                    'id': d.id,
-                    'name': d.name or "Sin nombre"
+                    "id": d.id,
+                    "name": d.name or "Sin nombre"
                 })
-            self._emit_safe(self.chats_loaded, chat_list)
+
+            self.chats_loaded.emit(chat_list)
+
         except Exception as e:
-            print(f"Error fetching chats: {e}")
-            self._emit_safe(self.connection_status, f"Error al obtener chats: {str(e)}", True)
+            self.connection_status.emit(f"Error al obtener chats: {e}", False)
 
     def fetch_videos(self, chat_id, limit=5):
-        self.run_coro(self._fetch_videos_async(chat_id, limit))
+        self._submit(self._fetch_videos_async(chat_id, limit))
 
     async def _fetch_videos_async(self, chat_id, limit):
         client = await self._get_client()
         if not client or not await client.is_user_authorized():
+            self.connection_status.emit("No autorizado", False)
             return
 
         videos = []
@@ -187,68 +224,79 @@ class TelegramManager(QObject):
             async for msg in client.iter_messages(chat_id):
                 if msg.video:
                     videos.append({
-                        'id': msg.id,
-                        'date': msg.date.isoformat() if msg.date else "",
-                        'text': msg.message or "",
-                        'file_name': msg.file.name if msg.file else "video.mp4",
-                        'size': msg.file.size if msg.file else 0
+                        "id": msg.id,
+                        "date": msg.date.isoformat() if msg.date else "",
+                        "text": msg.message or "",
+                        "file_name": msg.file.name if msg.file and msg.file.name else "video.mp4",
+                        "size": msg.file.size if msg.file else 0
                     })
+
                     if len(videos) >= limit:
                         break
-            self._emit_safe(self.videos_loaded, videos)
+
+            self.videos_loaded.emit(videos)
+
         except Exception as e:
-            print(f"Error fetching videos: {e}")
-            self._emit_safe(self.download_finished, False, f"Error al obtener videos: {str(e)}")
+            self.connection_status.emit(f"Error al obtener videos: {e}", False)
 
     def download_video(self, chat_id, message_id, dest_path):
-        self.run_coro(self._download_video_async(chat_id, message_id, dest_path))
+        self._submit(self._download_video_async(chat_id, message_id, dest_path))
 
     async def _download_video_async(self, chat_id, message_id, dest_path):
         client = await self._get_client()
         if not client or not await client.is_user_authorized():
-            self._emit_safe(self.download_finished, False, "No autorizado")
+            self.download_finished.emit(False, "No autorizado")
             return
 
         try:
             msg = await client.get_messages(chat_id, ids=message_id)
 
             def progress_callback(current, total):
-                perc = current / total if total else 0
+                percent = (current / total) if total else 0.0
                 mb_curr = current / (1024 * 1024)
-                mb_tot = total / (1024 * 1024)
-                self._emit_safe(self.download_progress, perc, f"Descargando... {mb_curr:.1f}MB / {mb_tot:.1f}MB")
+                mb_total = total / (1024 * 1024) if total else 0.0
+                self.download_progress.emit(
+                    percent,
+                    f"Descargando... {mb_curr:.1f} MB / {mb_total:.1f} MB"
+                )
 
             await client.download_media(msg, file=dest_path, progress_callback=progress_callback)
-            self._emit_safe(self.download_finished, True, dest_path)
+            self.download_finished.emit(True, dest_path)
+
         except Exception as e:
-            self._emit_safe(self.download_finished, False, str(e))
+            self.download_finished.emit(False, str(e))
 
     def disconnect(self):
         if self.client:
-            self.run_coro(self.client.disconnect())
+            self._submit(self._disconnect_async())
+
+    async def _disconnect_async(self):
+        try:
+            if self.client:
+                await self.client.disconnect()
+        finally:
             self.client = None
-            self._emit_safe(self.connection_status, "Desconectado", False)
+            self.connection_status.emit("Desconectado", False)
 
     def shutdown(self):
-        """Cleanly shutdown the loop and thread."""
-        if self.client:
-            asyncio.run_coroutine_threadsafe(self.client.disconnect(), self.loop)
+        """
+        Cierra el cliente y detiene el hilo.
+        Llama esto al cerrar la aplicación.
+        """
+        if self.worker_thread and self.worker_thread.isRunning():
+            fut = self._submit(self._shutdown_async())
+            try:
+                if fut is not None:
+                    fut.result(timeout=5)
+            except Exception:
+                pass
 
-        if self.loop.is_running():
-            self.loop.call_soon_threadsafe(self.loop.stop)
+            self.worker_thread.stop_loop()
+            self.worker_thread.wait(5000)
 
-        if self.worker_thread.isRunning():
-            self.worker_thread.quit()
-            self.worker_thread.wait(1000)
-
-class TelegramWorkerThread(QThread):
-    def __init__(self, loop):
-        super().__init__()
-        self.loop = loop
-
-    def run(self):
-        asyncio.set_event_loop(self.loop)
+    async def _shutdown_async(self):
         try:
-            self.loop.run_forever()
-        except Exception as e:
-            print(f"TelegramManager loop error: {e}")
+            if self.client:
+                await self.client.disconnect()
+        finally:
+            self.client = None

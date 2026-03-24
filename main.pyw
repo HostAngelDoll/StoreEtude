@@ -123,6 +123,8 @@ class PrecureManagerApp(QMainWindow):
 
     def closeEvent(self, event):
         self.save_settings()
+        if hasattr(self, 'tg_manager'):
+            self.tg_manager.shutdown()
         super().closeEvent(event)
 
     def save_settings(self):
