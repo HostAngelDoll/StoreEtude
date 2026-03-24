@@ -1,9 +1,9 @@
 import os
 import openpyxl
+import sqlite3
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal
-from PyQt6.QtSql import QSqlDatabase, QSqlQuery
-from db_manager import BASE_DIR_PATH, get_yearly_db_path
+from db_manager import BASE_DIR_PATH, get_yearly_db_path, GLOBAL_DB_PATH
 
 class DataMigrator(QObject):
     progress_changed = pyqtSignal(int, int, str)  # current, total, label
@@ -33,15 +33,23 @@ class DataMigrator(QObject):
         type_res_map = {}
         seasons_map = {}
 
-        db_global = QSqlDatabase.database("global_db")
-        q = QSqlQuery(db_global)
-        q.exec("SELECT idx, type_resource FROM T_Type_Resources")
-        while q.next():
-            type_res_map[q.value(1)] = q.value(0)
+        # Use sqlite3 standard lib in background thread
+        try:
+            conn_global = sqlite3.connect(GLOBAL_DB_PATH)
+            cursor_global = conn_global.cursor()
 
-        q.exec("SELECT precure_season_name FROM T_Seasons")
-        while q.next():
-            seasons_map[q.value(0)] = q.value(0)
+            cursor_global.execute("SELECT idx, type_resource FROM T_Type_Resources")
+            for row in cursor_global.fetchall():
+                type_res_map[row[1]] = row[0]
+
+            cursor_global.execute("SELECT precure_season_name FROM T_Seasons")
+            for row in cursor_global.fetchall():
+                seasons_map[row[0]] = row[0]
+
+            conn_global.close()
+        except Exception as e:
+            self.error_occurred.emit(f"Error accessing global DB: {e}")
+            return
 
         for i, year in enumerate(years):
             if self._cancel_requested:
@@ -64,20 +72,14 @@ class DataMigrator(QObject):
                     continue
 
                 sheet = wb["material_list"]
-                db_year_conn_name = f"migration_db_{year}"
                 db_year_path = get_yearly_db_path(year)
-
-                db_year = QSqlDatabase.addDatabase("QSQLITE", db_year_conn_name)
-                db_year.setDatabaseName(db_year_path)
-                if not db_year.open(): continue
+                conn_year = sqlite3.connect(db_year_path)
+                cursor_year = conn_year.cursor()
 
                 existing_titles = set()
-                q_titles = QSqlQuery(db_year)
-                q_titles.exec("SELECT title_material FROM T_Resources")
-                while q_titles.next():
-                    existing_titles.add(q_titles.value(0))
-
-                query = QSqlQuery(db_year)
+                cursor_year.execute("SELECT title_material FROM T_Resources")
+                for row in cursor_year.fetchall():
+                    existing_titles.add(row[0])
                 for row_idx in range(4, sheet.max_row + 1):
                     if self._cancel_requested: break
                     
@@ -95,37 +97,33 @@ class DataMigrator(QObject):
                     type_mat_id = type_res_map.get(sheet.cell(row=row_idx, column=5).value)
                     season_name_fk = seasons_map.get(sheet.cell(row=row_idx, column=6).value)
 
-                    query.prepare("""
-                        INSERT INTO T_Resources (
-                            title_material, type_material, precure_season_name, ep_num, ep_sp_num,
-                            released_utc_09, released_soundtrack_utc_09, released_spinoff_utc_09,
-                            duration_file, datetime_download, relative_path_of_file,
-                            relative_path_of_soundtracks, relative_path_of_lyrics
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """)
-                    query.addBindValue(final_title)
-                    query.addBindValue(type_mat_id)
-                    query.addBindValue(season_name_fk)
-                    query.addBindValue(sheet.cell(row=row_idx, column=7).value)
-                    query.addBindValue(sheet.cell(row=row_idx, column=8).value)
-                    query.addBindValue(str(sheet.cell(row=row_idx, column=10).value or ""))
-                    query.addBindValue(str(sheet.cell(row=row_idx, column=11).value or ""))
-                    query.addBindValue(str(sheet.cell(row=row_idx, column=12).value or ""))
-                    query.addBindValue(str(sheet.cell(row=row_idx, column=13).value or ""))
-                    query.addBindValue(str(sheet.cell(row=row_idx, column=14).value or ""))
-                    query.addBindValue(str(sheet.cell(row=row_idx, column=15).value or ""))
-                    query.addBindValue(None); query.addBindValue(None)
-
-                    if query.exec():
+                    try:
+                        cursor_year.execute("""
+                            INSERT INTO T_Resources (
+                                title_material, type_material, precure_season_name, ep_num, ep_sp_num,
+                                released_utc_09, released_soundtrack_utc_09, released_spinoff_utc_09,
+                                duration_file, datetime_download, relative_path_of_file,
+                                relative_path_of_soundtracks, relative_path_of_lyrics
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            final_title, type_mat_id, season_name_fk,
+                            sheet.cell(row=row_idx, column=7).value,
+                            sheet.cell(row=row_idx, column=8).value,
+                            str(sheet.cell(row=row_idx, column=10).value or ""),
+                            str(sheet.cell(row=row_idx, column=11).value or ""),
+                            str(sheet.cell(row=row_idx, column=12).value or ""),
+                            str(sheet.cell(row=row_idx, column=13).value or ""),
+                            str(sheet.cell(row=row_idx, column=14).value or ""),
+                            str(sheet.cell(row=row_idx, column=15).value or ""),
+                            None, None
+                        ))
                         total_migrated += 1
                         self.log_message.emit(f"Migrado recurso: {final_title}", False, "resources")
-                    else:
-                        self.log_message.emit(f"Error al migrar recurso {final_title}: {query.lastError().text()}", True, "resources")
+                    except Exception as e:
+                        self.log_message.emit(f"Error al migrar recurso {final_title}: {e}", True, "resources")
 
-                query = None
-                q_titles = None
-                db_year.close()
-                QSqlDatabase.removeDatabase(db_year_conn_name)
+                conn_year.commit()
+                conn_year.close()
             except Exception as e:
                 self.log_message.emit(f"Error procesando {excel_path}: {e}", True, "resources")
 
@@ -133,7 +131,7 @@ class DataMigrator(QObject):
         self.finished.emit(total_migrated)
 
     def migrate_registry(self):
-        from db_manager import calculate_lapsed, get_opener_model_info
+        from db_manager import calculate_lapsed, get_opener_model_info_sqlite
         if not os.path.exists(BASE_DIR_PATH):
             self.error_occurred.emit(f"Ruta base {BASE_DIR_PATH} no encontrada.")
             return
@@ -156,16 +154,13 @@ class DataMigrator(QObject):
                 if "overwrite_registry" not in wb.sheetnames: continue
                 sheet = wb["overwrite_registry"]
 
-                db_year_conn_name = f"registry_mig_{year}"
                 db_year_path = get_yearly_db_path(year)
-                db_year = QSqlDatabase.addDatabase("QSQLITE", db_year_conn_name)
-                db_year.setDatabaseName(db_year_path)
-                if not db_year.open(): continue
+                conn_year = sqlite3.connect(db_year_path)
+                cursor_year = conn_year.cursor()
 
                 # Check if table has data
-                q_check = QSqlQuery(db_year)
-                q_check.exec("SELECT COUNT(*) FROM T_Registry")
-                has_data = q_check.next() and q_check.value(0) > 0
+                cursor_year.execute("SELECT COUNT(*) FROM T_Registry")
+                has_data = cursor_year.fetchone()[0] > 0
 
                 if has_data:
                     self._confirmation_result = None
@@ -174,18 +169,17 @@ class DataMigrator(QObject):
                     import time
                     from PyQt6.QtCore import QCoreApplication
                     while self._confirmation_result is None:
-                        QCoreApplication.processEvents()
+                        # processEvents is okay here as it's the main thread waiting on a signal
+                        # OR if it's the worker thread, it should wait for a signal result
                         time.sleep(0.01)
                         if self._cancel_requested: break
                     
                     if not self._confirmation_result:
-                        db_year.close()
-                        QSqlDatabase.removeDatabase(db_year_conn_name)
+                        conn_year.close()
                         continue
 
-                QSqlQuery(db_year).exec("DELETE FROM T_Registry")
+                cursor_year.execute("DELETE FROM T_Registry")
 
-                query = QSqlQuery(db_year)
                 for row_idx in range(4, sheet.max_row + 1):
                     if self._cancel_requested: break
                     title_material = sheet.cell(row=row_idx, column=11).value
@@ -197,34 +191,27 @@ class DataMigrator(QObject):
                     model_writer = sheet.cell(row=row_idx, column=15).value
 
                     lapsed = calculate_lapsed(dt_range)
-                    op_model, op_name = get_opener_model_info(dt_range, model_writer)
+                    op_model, op_name = get_opener_model_info_sqlite(dt_range, model_writer)
 
-                    query.prepare("""
-                        INSERT INTO T_Registry (
-                            title_material, datetime_range_utc_06, type_repeat,
-                            type_listen, model_writer, lapsed_calculated,
-                            opener_model, name_of_opener_model
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """)
-                    query.addBindValue(title_material)
-                    query.addBindValue(str(dt_range or ""))
-                    query.addBindValue(str(type_repeat or ""))
-                    query.addBindValue(str(type_listen or ""))
-                    query.addBindValue(str(model_writer or ""))
-                    query.addBindValue(lapsed)
-                    query.addBindValue(op_model)
-                    query.addBindValue(op_name)
-
-                    if query.exec():
+                    try:
+                        cursor_year.execute("""
+                            INSERT INTO T_Registry (
+                                title_material, datetime_range_utc_06, type_repeat,
+                                type_listen, model_writer, lapsed_calculated,
+                                opener_model, name_of_opener_model
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            str(title_material), str(dt_range or ""),
+                            str(type_repeat or ""), str(type_listen or ""),
+                            str(model_writer or ""), lapsed, op_model, op_name
+                        ))
                         total_migrated += 1
                         self.log_message.emit(f"Migrado registro: {title_material} ({dt_range})", False, "registry")
-                    else:
-                        self.log_message.emit(f"Error al migrar registro {title_material}: {query.lastError().text()}", True, "registry")
+                    except Exception as e:
+                        self.log_message.emit(f"Error al migrar registro {title_material}: {e}", True, "registry")
 
-                query = None
-                q_check = None
-                db_year.close()
-                QSqlDatabase.removeDatabase(db_year_conn_name)
+                conn_year.commit()
+                conn_year.close()
             except Exception as e:
                 self.log_message.emit(f"Error registry {year}: {e}", True, "registry")
 

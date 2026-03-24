@@ -172,6 +172,47 @@ def get_opener_model_info(dt_range, model_writer):
 
     return None, None
 
+def get_opener_model_info_sqlite(dt_range, model_writer):
+    if not dt_range or not model_writer:
+        return None, None
+
+    try:
+        # Extract date "YYYY-MM-DD"
+        date_str = str(dt_range).strip().split(' ')[0]
+        if not re.match(r'\d{4}-\d{2}-\d{2}', date_str):
+            return None, None
+
+        conn = sqlite3.connect(GLOBAL_DB_PATH)
+        cursor = conn.cursor()
+
+        writer_type = str(model_writer).lower()
+        if "overwrite" in writer_type:
+            col_start = "start_validity_overwrite"
+            col_end = "end_validity_overwrite"
+            col_subname = "model_name_overwrite"
+        elif "locally" in writer_type:
+            col_start = "start_validity_locally"
+            col_end = "end_validity_locally"
+            col_subname = "model_name_locally"
+        else:
+            conn.close()
+            return None, None
+
+        cursor.execute(f"""
+            SELECT model_name, {col_subname}
+            FROM T_Opener_Models
+            WHERE ? >= {col_start} AND ? <= {col_end}
+        """, (date_str, date_str))
+
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            return row[0], row[1]
+    except Exception as e:
+        print(f"Error in get_opener_model_info_sqlite: {e}")
+
+    return None, None
+
 def init_databases(reset=False):
     init_global_db(reset)
     init_yearly_dbs(reset)
