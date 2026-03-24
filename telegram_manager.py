@@ -1,7 +1,7 @@
 import os
 import asyncio
 import threading
-from PyQt6.QtCore import QObject, pyqtSignal, QThread, QMetaObject, Qt
+from PyQt6.QtCore import QObject, pyqtSignal, QThread, QMetaObject, Qt, QTimer
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from config_manager import ConfigManager
@@ -40,14 +40,14 @@ class TelegramManager(QObject):
         self._initialized = True
 
     def _emit_safe(self, signal, *args):
-        """Helper to emit signals from the background thread to the GUI thread safely."""
-        QMetaObject.invokeMethod(
-            self,
-            lambda: signal.emit(*args),
-            Qt.ConnectionType.QueuedConnection
-        )
+        """Helper to emit signals from the background thread to the GUI thread safely using QTimer."""
+        QTimer.singleShot(0, lambda: signal.emit(*args))
 
     def run_coro(self, coro):
+        if not self.loop or not self.loop.is_running():
+            print("TelegramManager Coroutine error: asyncio loop is not running.")
+            return None
+
         future = asyncio.run_coroutine_threadsafe(coro, self.loop)
 
         def handle_result(f):
@@ -55,7 +55,7 @@ class TelegramManager(QObject):
                 f.result()
             except Exception as e:
                 print(f"TelegramManager Coroutine error: {e}")
-                # Use _emit_safe if we want to report this to UI
+                self._emit_safe(self.connection_status, f"Error interno: {str(e)}", False)
 
         future.add_done_callback(handle_result)
         return future
@@ -191,7 +191,7 @@ class TelegramManager(QObject):
     async def _download_video_async(self, chat_id, message_id, dest_path):
         client = await self._get_client()
         if not client or not await client.is_user_authorized():
-            self.download_finished.emit(False, "No autorizado")
+            self._emit_safe(self.download_finished, False, "No autorizado")
             return
 
         try:
