@@ -171,24 +171,40 @@ class ConfigManager:
         if new_path == self.config_path:
             return True
         
+        old_dir = os.path.dirname(self.config_path)
+        new_dir = os.path.dirname(new_path)
+
         try:
             # Ensure target directory exists
-            os.makedirs(os.path.dirname(new_path), exist_ok=True)
+            os.makedirs(new_dir, exist_ok=True)
             
-            # Move file
+            # Move config file
             if os.path.exists(self.config_path):
                 shutil.move(self.config_path, new_path)
             else:
-                # If current doesn't exist, just save to new path
                 self.config_path = new_path
                 self.save()
             
-            # Update registry
+            # Move cache file if exists
+            old_cache = os.path.join(old_dir, "cache.json")
+            if os.path.exists(old_cache):
+                shutil.move(old_cache, os.path.join(new_dir, "cache.json"))
+
+            # Move telegram session files if they exist
+            # Telethon creates session_name.session
+            for f in os.listdir(old_dir):
+                if f.startswith("session_telegram") and f.endswith(".session"):
+                    shutil.move(os.path.join(old_dir, f), os.path.join(new_dir, f))
+
+            # Update paths in memory
             self.config_path = new_path
+            self.cache_path = os.path.join(new_dir, "cache.json")
+
+            # Update registry
             self.registry.setValue("config_json_path", new_path)
             return True
         except Exception as e:
-            print(f"Error moving config: {e}")
+            print(f"Error moving config and auxiliary files: {e}")
             return False
 
     @staticmethod

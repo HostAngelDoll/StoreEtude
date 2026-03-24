@@ -571,6 +571,11 @@ class PrecureManagerApp(QMainWindow):
             refresh_config_paths()
             self.apply_theme(self.config.get("ui.theme"))
             self.load_settings()
+
+            # Re-initialize Telegram manager to pick up moved session or new credentials
+            if hasattr(self, 'tg_manager'):
+                self.tg_manager.reset_client()
+
             # If the DB path changed, we might need to reconnect
             self.init_db_connections()
             # Reconstruct global tabs to use new connection/path

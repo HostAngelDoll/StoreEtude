@@ -77,6 +77,7 @@ class TelegramManager(QObject):
         self._current_phone = None
         self._phone_code_hash = None
         self._is_connected = False
+        self._is_connecting = False
         self._last_status = "No conectado"
 
         self.worker_thread = TelegramLoopThread()
@@ -84,6 +85,9 @@ class TelegramManager(QObject):
 
         if not self.worker_thread.wait_until_ready(3.0):
             raise RuntimeError("No se pudo iniciar el hilo de Telegram a tiempo.")
+
+        # Attempt automatic connection on startup if credentials exist
+        self.connect()
 
     def _submit(self, coro):
         try:
@@ -112,12 +116,34 @@ class TelegramManager(QObject):
         return self.client
 
     def connect(self):
+        if self._is_connecting: return
+        self._is_connecting = True
+        self._last_status = "Conectando..."
+        self.connection_status.emit(self._last_status, False)
         self._submit(self._connect_async())
+
+    async def _ensure_connection(self):
+        client = await self._get_client()
+        if not client:
+            return None
+
+        if not client.is_connected():
+            await client.connect()
+
+        if not await client.is_user_authorized():
+            self._is_connected = False
+            self._last_status = "Requiere autenticación"
+            self.connection_status.emit(self._last_status, False)
+            self.auth_required.emit("phone")
+            return None
+
+        return client
 
     async def _connect_async(self):
         client = await self._get_client()
         if not client:
-            self.connection_status.emit("Faltan API ID / API Hash", False)
+            self._last_status = "Faltan API ID / API Hash"
+            self.connection_status.emit(self._last_status, False)
             return
 
         try:
@@ -125,17 +151,22 @@ class TelegramManager(QObject):
                 await client.connect()
 
             if not await client.is_user_authorized():
+                self._is_connected = False
+                self._last_status = "Requiere autenticación"
+                self.connection_status.emit(self._last_status, False)
                 self.auth_required.emit("phone")
                 return
 
             me = await client.get_me()
             name = ((me.first_name or "") + (" " + me.last_name if me.last_name else "")).strip()
             self._is_connected = True
+            self._is_connecting = False
             self._last_status = f"Conectado como {name or 'usuario'}"
             self.connection_status.emit(self._last_status, True)
 
         except Exception as e:
             self._is_connected = False
+            self._is_connecting = False
             self._last_status = f"Error al conectar: {e}"
             self.connection_status.emit(self._last_status, False)
 
@@ -196,9 +227,11 @@ class TelegramManager(QObject):
         self._submit(self._fetch_chats_async())
 
     async def _fetch_chats_async(self):
-        client = await self._get_client()
-        if not client or not await client.is_user_authorized():
-            self.connection_status.emit("No autorizado", False)
+        client = await self._ensure_connection()
+        if not client:
+            self._is_connected = False
+            self._last_status = "No conectado o no autorizado"
+            self.connection_status.emit(self._last_status, False)
             return
 
         try:
@@ -220,9 +253,11 @@ class TelegramManager(QObject):
         self._submit(self._fetch_videos_async(chat_id, limit))
 
     async def _fetch_videos_async(self, chat_id, limit):
-        client = await self._get_client()
-        if not client or not await client.is_user_authorized():
-            self.connection_status.emit("No autorizado", False)
+        client = await self._ensure_connection()
+        if not client:
+            self._is_connected = False
+            self._last_status = "No conectado o no autorizado"
+            self.connection_status.emit(self._last_status, False)
             return
 
         videos = []
@@ -249,9 +284,9 @@ class TelegramManager(QObject):
         self._submit(self._download_video_async(chat_id, message_id, dest_path))
 
     async def _download_video_async(self, chat_id, message_id, dest_path):
-        client = await self._get_client()
-        if not client or not await client.is_user_authorized():
-            self.download_finished.emit(False, "No autorizado")
+        client = await self._ensure_connection()
+        if not client:
+            self.download_finished.emit(False, "No conectado o no autorizado")
             return
 
         try:
@@ -289,8 +324,24 @@ class TelegramManager(QObject):
     def is_connected(self):
         return self._is_connected
 
+    def is_connecting(self):
+        return self._is_connecting
+
     def get_last_status(self):
         return self._last_status
+
+    def reset_client(self):
+        self._submit(self._reset_client_async())
+
+    async def _reset_client_async(self):
+        try:
+            if self.client:
+                await self.client.disconnect()
+        finally:
+            self.client = None
+            self._is_connected = False
+            self._is_connecting = False
+            self.connect()
 
     def shutdown(self):
         """

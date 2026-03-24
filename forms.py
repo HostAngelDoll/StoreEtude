@@ -683,16 +683,23 @@ class SettingsDialog(QDialog):
         self._init_tg_manager()
         if self._tg_connected:
             self.tg_manager.disconnect()
-        else:
+        elif not self.tg_manager.is_connecting():
             # Save current API credentials first
             self.config.set("telegram.api_id", self.api_id_edit.text(), save=False)
             self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=True)
+            # Ensure we start from a clean state if credentials changed
+            self.tg_manager.disconnect()
             self.tg_manager.connect()
 
     def update_tg_status(self, message, connected):
         self.tg_status_label.setText(message)
         self._tg_connected = connected
-        self.btn_tg_connect.setText("Desconectar" if connected else "Conectar")
+        if self.tg_manager and self.tg_manager.is_connecting():
+            self.btn_tg_connect.setText("Conectando...")
+            self.btn_tg_connect.setEnabled(False)
+        else:
+            self.btn_tg_connect.setText("Desconectar" if connected else "Conectar")
+            self.btn_tg_connect.setEnabled(True)
 
     def handle_tg_auth(self, type):
         if not self.tg_manager: return
@@ -903,6 +910,10 @@ class TelegramDownloadDialog(QDialog):
         self.layout.addWidget(self.status_label)
 
         btn_layout = QHBoxLayout()
+        self.btn_reload = QPushButton("Recargar")
+        self.btn_reload.clicked.connect(self.fetch_latest_videos)
+        btn_layout.addWidget(self.btn_reload)
+
         self.btn_download = QPushButton("Descargar")
         self.btn_download.clicked.connect(self.start_downloads)
         self.btn_close = QPushButton("Cerrar")
@@ -925,6 +936,8 @@ class TelegramDownloadDialog(QDialog):
             self.tg_manager.videos_loaded.connect(self.populate_videos)
             self.tg_manager.download_progress.connect(self.update_progress)
             self.tg_manager.download_finished.connect(self.on_download_finished)
+            self.tg_manager.connection_status.connect(self.on_connection_status_changed)
+            self.tg_manager.auth_required.connect(self.handle_tg_auth)
 
         # Initial data
         self.update_master_subfolders()
@@ -1169,11 +1182,31 @@ class TelegramDownloadDialog(QDialog):
             QMessageBox.critical(self, "Error de descarga", f"Error al descargar: {message}")
             self.btn_download.setEnabled(True)
 
+    def on_connection_status_changed(self, message, connected):
+        self.status_label.setText(message)
+        # If successfully connected and we have no videos yet, auto-fetch
+        if connected and not self.video_items:
+            self.fetch_latest_videos()
+
+    def handle_tg_auth(self, type):
+        if not self.isVisible(): return
+        if type == "phone":
+            phone, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce tu número de teléfono (+...):")
+            if ok: self.tg_manager.submit_phone(phone)
+        elif type == "code":
+            code, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce el código de verificación:")
+            if ok: self.tg_manager.submit_code(code)
+        elif type == "password":
+            pw, ok = QInputDialog.getText(self, "Telegram Auth", "Introduce tu contraseña 2FA:", QLineEdit.EchoMode.Password)
+            if ok: self.tg_manager.submit_password(pw)
+
     def closeEvent(self, event):
         try:
             self.tg_manager.videos_loaded.disconnect(self.populate_videos)
             self.tg_manager.download_progress.disconnect(self.update_progress)
             self.tg_manager.download_finished.disconnect(self.on_download_finished)
+            self.tg_manager.connection_status.disconnect(self.on_connection_status_changed)
+            self.tg_manager.auth_required.disconnect(self.handle_tg_auth)
         except: pass
         super().closeEvent(event)
 
