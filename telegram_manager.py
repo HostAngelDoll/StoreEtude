@@ -1,6 +1,7 @@
 import os
 import asyncio
-from PyQt6.QtCore import QObject, pyqtSignal, QThread
+import threading
+from PyQt6.QtCore import QObject, pyqtSignal, QThread, QMetaObject, Qt
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from config_manager import ConfigManager
@@ -14,12 +15,14 @@ class TelegramManager(QObject):
     download_finished = pyqtSignal(bool, str)
 
     _instance = None
+    _lock = threading.Lock()
 
     def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(TelegramManager, cls).__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(TelegramManager, cls).__new__(cls)
+                cls._instance._initialized = False
+            return cls._instance
 
     def __init__(self):
         if self._initialized:
@@ -36,6 +39,14 @@ class TelegramManager(QObject):
         self._auth_future = None
         self._initialized = True
 
+    def _emit_safe(self, signal, *args):
+        """Helper to emit signals from the background thread to the GUI thread safely."""
+        QMetaObject.invokeMethod(
+            self,
+            lambda: signal.emit(*args),
+            Qt.ConnectionType.QueuedConnection
+        )
+
     def run_coro(self, coro):
         future = asyncio.run_coroutine_threadsafe(coro, self.loop)
 
@@ -44,7 +55,7 @@ class TelegramManager(QObject):
                 f.result()
             except Exception as e:
                 print(f"TelegramManager Coroutine error: {e}")
-                # We could emit a signal here if we want the UI to know about generic errors
+                # Use _emit_safe if we want to report this to UI
 
         future.add_done_callback(handle_result)
         return future
@@ -82,14 +93,14 @@ class TelegramManager(QObject):
 
             if not await client.is_user_authorized():
                 # We use a simplified sign in flow to handle UI interaction
-                self.auth_required.emit("phone")
+                self._emit_safe(self.auth_required, "phone")
                 return
 
             me = await client.get_me()
             name = (me.first_name or "") + (" " + me.last_name if me.last_name else "")
-            self.connection_status.emit(f"Conectado como {name}", True)
+            self._emit_safe(self.connection_status, f"Conectado como {name}", True)
         except Exception as e:
-            self.connection_status.emit(f"Error: {str(e)}", False)
+            self._emit_safe(self.connection_status, f"Error: {str(e)}", False)
 
     def submit_phone(self, phone):
         self.run_coro(self._submit_phone_async(phone))
@@ -99,9 +110,9 @@ class TelegramManager(QObject):
         try:
             self._phone_code_hash = (await client.send_code_request(phone)).phone_code_hash
             self._current_phone = phone
-            self.auth_required.emit("code")
+            self._emit_safe(self.auth_required, "code")
         except Exception as e:
-            self.connection_status.emit(f"Error (phone): {str(e)}", False)
+            self._emit_safe(self.connection_status, f"Error (phone): {str(e)}", False)
 
     def submit_code(self, code):
         self.run_coro(self._submit_code_async(code))
@@ -112,9 +123,9 @@ class TelegramManager(QObject):
             await client.sign_in(self._current_phone, code, phone_code_hash=self._phone_code_hash)
             await self._connect_async()
         except SessionPasswordNeededError:
-            self.auth_required.emit("password")
+            self._emit_safe(self.auth_required, "password")
         except Exception as e:
-            self.connection_status.emit(f"Error (code): {str(e)}", False)
+            self._emit_safe(self.connection_status, f"Error (code): {str(e)}", False)
 
     def submit_password(self, password):
         self.run_coro(self._submit_password_async(password))
@@ -125,7 +136,7 @@ class TelegramManager(QObject):
             await client.sign_in(password=password)
             await self._connect_async()
         except Exception as e:
-            self.connection_status.emit(f"Error (pw): {str(e)}", False)
+            self._emit_safe(self.connection_status, f"Error (pw): {str(e)}", False)
 
     def fetch_chats(self):
         self.run_coro(self._fetch_chats_async())
@@ -143,10 +154,10 @@ class TelegramManager(QObject):
                     'id': d.id,
                     'name': d.name or "Sin nombre"
                 })
-            self.chats_loaded.emit(chat_list)
+            self._emit_safe(self.chats_loaded, chat_list)
         except Exception as e:
             print(f"Error fetching chats: {e}")
-            self.connection_status.emit(f"Error al obtener chats: {str(e)}", True)
+            self._emit_safe(self.connection_status, f"Error al obtener chats: {str(e)}", True)
 
     def fetch_videos(self, chat_id, limit=5):
         self.run_coro(self._fetch_videos_async(chat_id, limit))
@@ -169,10 +180,10 @@ class TelegramManager(QObject):
                     })
                     if len(videos) >= limit:
                         break
-            self.videos_loaded.emit(videos)
+            self._emit_safe(self.videos_loaded, videos)
         except Exception as e:
             print(f"Error fetching videos: {e}")
-            self.download_finished.emit(False, f"Error al obtener videos: {str(e)}")
+            self._emit_safe(self.download_finished, False, f"Error al obtener videos: {str(e)}")
 
     def download_video(self, chat_id, message_id, dest_path):
         self.run_coro(self._download_video_async(chat_id, message_id, dest_path))
@@ -190,18 +201,18 @@ class TelegramManager(QObject):
                 perc = current / total if total else 0
                 mb_curr = current / (1024 * 1024)
                 mb_tot = total / (1024 * 1024)
-                self.download_progress.emit(perc, f"Descargando... {mb_curr:.1f}MB / {mb_tot:.1f}MB")
+                self._emit_safe(self.download_progress, perc, f"Descargando... {mb_curr:.1f}MB / {mb_tot:.1f}MB")
 
             await client.download_media(msg, file=dest_path, progress_callback=progress_callback)
-            self.download_finished.emit(True, dest_path)
+            self._emit_safe(self.download_finished, True, dest_path)
         except Exception as e:
-            self.download_finished.emit(False, str(e))
+            self._emit_safe(self.download_finished, False, str(e))
 
     def disconnect(self):
         if self.client:
             self.run_coro(self.client.disconnect())
             self.client = None
-            self.connection_status.emit("Desconectado", False)
+            self._emit_safe(self.connection_status, "Desconectado", False)
 
     def shutdown(self):
         """Cleanly shutdown the loop and thread."""

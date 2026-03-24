@@ -657,6 +657,16 @@ class SettingsDialog(QDialog):
     def _init_tg_manager(self):
         if self.tg_manager is None:
             self.tg_manager = TelegramManager()
+            try:
+                self.tg_manager.connection_status.disconnect(self.update_tg_status)
+            except: pass
+            try:
+                self.tg_manager.auth_required.disconnect(self.handle_tg_auth)
+            except: pass
+            try:
+                self.tg_manager.chats_loaded.disconnect(self.show_chat_selection)
+            except: pass
+
             self.tg_manager.connection_status.connect(self.update_tg_status)
             self.tg_manager.auth_required.connect(self.handle_tg_auth)
             self.tg_manager.chats_loaded.connect(self.show_chat_selection)
@@ -702,6 +712,15 @@ class SettingsDialog(QDialog):
                 self.config.set("telegram.chat_id", chat['id'], save=False)
                 self.config.set("telegram.chat_name", chat['name'], save=True)
                 self.chat_name_label.setText(chat['name'])
+
+    def closeEvent(self, event):
+        if self.tg_manager:
+            try:
+                self.tg_manager.connection_status.disconnect(self.update_tg_status)
+                self.tg_manager.auth_required.disconnect(self.handle_tg_auth)
+                self.tg_manager.chats_loaded.disconnect(self.show_chat_selection)
+            except: pass
+        super().closeEvent(event)
 
     def browse_base_dir(self):
         dir_path = QFileDialog.getExistingDirectory(self, "Seleccionar Ruta Base", self.base_dir_edit.text())
@@ -796,6 +815,18 @@ class TelegramDownloadDialog(QDialog):
         super().__init__(parent)
         self.config = ConfigManager()
         self.tg_manager = TelegramManager()
+
+        # Avoid duplicate connections
+        try:
+            self.tg_manager.videos_loaded.disconnect(self.populate_videos)
+        except: pass
+        try:
+            self.tg_manager.download_progress.disconnect(self.update_progress)
+        except: pass
+        try:
+            self.tg_manager.download_finished.disconnect(self.on_download_finished)
+        except: pass
+
         self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.setWindowTitle("Descargar nuevo contenido desde Telegram")
         self.resize(800, 700)
@@ -1085,11 +1116,21 @@ class TelegramDownloadDialog(QDialog):
         self.status_label.setText(status)
 
     def on_download_finished(self, success, message):
+        if not self.isVisible():
+            return
         if success:
             self.download_next()
         else:
             QMessageBox.critical(self, "Error de descarga", f"Error al descargar: {message}")
             self.btn_download.setEnabled(True)
+
+    def closeEvent(self, event):
+        try:
+            self.tg_manager.videos_loaded.disconnect(self.populate_videos)
+            self.tg_manager.download_progress.disconnect(self.update_progress)
+            self.tg_manager.download_finished.disconnect(self.on_download_finished)
+        except: pass
+        super().closeEvent(event)
 
 class ColumnManagementDialog(QDialog):
     def __init__(self, parent=None):
