@@ -76,6 +76,8 @@ class TelegramManager(QObject):
         self.client = None
         self._current_phone = None
         self._phone_code_hash = None
+        self._is_connected = False
+        self._last_status = "No conectado"
 
         self.worker_thread = TelegramLoopThread()
         self.worker_thread.start()
@@ -128,10 +130,14 @@ class TelegramManager(QObject):
 
             me = await client.get_me()
             name = ((me.first_name or "") + (" " + me.last_name if me.last_name else "")).strip()
-            self.connection_status.emit(f"Conectado como {name or 'usuario'}", True)
+            self._is_connected = True
+            self._last_status = f"Conectado como {name or 'usuario'}"
+            self.connection_status.emit(self._last_status, True)
 
         except Exception as e:
-            self.connection_status.emit(f"Error al conectar: {e}", False)
+            self._is_connected = False
+            self._last_status = f"Error al conectar: {e}"
+            self.connection_status.emit(self._last_status, False)
 
     def submit_phone(self, phone):
         self._submit(self._submit_phone_async(phone))
@@ -276,7 +282,15 @@ class TelegramManager(QObject):
                 await self.client.disconnect()
         finally:
             self.client = None
-            self.connection_status.emit("Desconectado", False)
+            self._is_connected = False
+            self._last_status = "Desconectado"
+            self.connection_status.emit(self._last_status, False)
+
+    def is_connected(self):
+        return self._is_connected
+
+    def get_last_status(self):
+        return self._last_status
 
     def shutdown(self):
         """

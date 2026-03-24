@@ -619,10 +619,10 @@ class SettingsDialog(QDialog):
         help_label.setOpenExternalLinks(True)
         tg_layout.addRow("", help_label)
 
-        self.tg_status_label = QLabel("No conectado")
-        self.btn_tg_connect = QPushButton("Conectar")
+        self.tg_status_label = QLabel(self.tg_manager.get_last_status() if self.tg_manager else "No disponible")
+        self._tg_connected = self.tg_manager.is_connected() if self.tg_manager else False
+        self.btn_tg_connect = QPushButton("Desconectar" if self._tg_connected else "Conectar")
         self.btn_tg_connect.clicked.connect(self.on_tg_main_btn_clicked)
-        self._tg_connected = False
 
         tg_conn_layout = QHBoxLayout()
         tg_conn_layout.addWidget(self.tg_status_label)
@@ -659,6 +659,9 @@ class SettingsDialog(QDialog):
         self.buttons.accepted.connect(self.validate_and_save)
         self.buttons.rejected.connect(self.reject)
         self.layout.addWidget(self.buttons)
+
+        # Initial signal connection
+        self._init_tg_manager()
 
     def _init_tg_manager(self):
         if self.tg_manager:
