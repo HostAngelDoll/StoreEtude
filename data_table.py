@@ -752,6 +752,10 @@ class DataTableTab(QWidget):
         
         if not db.isOpen():
             const_log("ERROR: La base de datos no está abierta.")
+            # Set a dummy model to avoid crashes if it's referenced
+            if hasattr(self, 'model') and self.model:
+                self.model.deleteLater()
+                self.model = None
             return
 
         # Disable updates during swap to prevent artifacts
@@ -762,10 +766,17 @@ class DataTableTab(QWidget):
         if main_win and hasattr(main_win, 'auto_resize_action'):
             auto_resize = main_win.auto_resize_action.isChecked()
 
+        # Is DB ReadOnly?
+        is_readonly = "mode=ro" in db.databaseName().lower() or (main_win and getattr(main_win, 'is_offline', False))
+        self.btn_add.setEnabled(not is_readonly)
+        self.btn_edit.setEnabled(not is_readonly)
+        self.btn_delete.setEnabled(not is_readonly)
+
         try:
             # 1. Clean up old model (keep view for now to avoid layout collapse)
             if hasattr(self, 'model') and self.model:
                 self.model.deleteLater()
+                self.model = None
                 const_log("Modelo anterior liberado.")
 
             # 2. Create new model

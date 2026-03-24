@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import re
+import time
 from datetime import datetime
 from PyQt6.QtSql import QSqlQuery, QSqlDatabase
 from config_manager import ConfigManager
@@ -16,6 +17,31 @@ def refresh_config_paths():
     _config.load()
     GLOBAL_DB_PATH = _config.get("global_db_path", "_global.db")
     BASE_DIR_PATH = _config.get("base_dir_path", r"E:\_Internal")
+
+def is_on_external_drive(path):
+    # Check if path starts with E:\
+    # Using case-insensitive check to be safe
+    return path.lower().startswith("e:\\")
+
+def get_offline_db_path(original_path):
+    config = ConfigManager()
+    offline_dir = config.offline_db_dir
+    os.makedirs(offline_dir, exist_ok=True)
+
+    if original_path == GLOBAL_DB_PATH:
+        return os.path.join(offline_dir, "offline_global.db")
+
+    # For yearly dbs, original_path looks like:
+    # E:\_Internal\2004\01. identity_propeties\le_etude_base.db
+    # We want a flat name like offline_2004.db
+    match = re.search(r'\\(\d{4})\\', original_path)
+    if match:
+        year = match.group(1)
+        return os.path.join(offline_dir, f"offline_{year}.db")
+
+    # Fallback to a sanitized filename
+    filename = os.path.basename(original_path)
+    return os.path.join(offline_dir, f"offline_{filename}")
 
 def get_db_connection(db_path):
     conn = sqlite3.connect(db_path)

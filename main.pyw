@@ -3,15 +3,17 @@ import os
 import re
 import sqlite3
 import csv
+import time
 import subprocess
 import ctypes
+import ctypes.wintypes
 from datetime import datetime
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QTabWidget, QLabel, QHBoxLayout, QTreeView,
                              QDockWidget, QDialog, QMessageBox, QMenuBar, QMenu,
-                             QProgressDialog)
+                             QProgressDialog, QStyle)
 from PyQt6.QtCore import Qt, QSettings, QByteArray
-from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QAction, QIcon, QPixmap
 from PyQt6.QtSql import QSqlDatabase, QSqlQuery
 import openpyxl
 
@@ -25,6 +27,27 @@ from data_migration import DataMigrator
 from resource_management import ResourceScanner
 from db_operations import DBOperations
 from telegram_manager import TelegramManager
+from sync_manager import SyncManager
+
+class OfflineWarningBar(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(30)
+        self.layout = QHBoxLayout(self)
+        self.layout.setContentsMargins(10, 0, 10, 0)
+
+        self.warning_icon = QLabel()
+        self.warning_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning).pixmap(16, 16))
+
+        self.label = QLabel("El disco 'E:/' no está disponible. Los datos respaldados están en modo de solo lectura.")
+        self.label.setStyleSheet("font-weight: bold; color: black;")
+
+        self.layout.addWidget(self.warning_icon)
+        self.layout.addWidget(self.label)
+        self.layout.addStretch()
+
+        self.setStyleSheet("background-color: #FFF29D; border-bottom: 1px solid #D4C46B;")
+        self.setVisible(False)
 
 class PrecureManagerApp(QMainWindow):
     def __init__(self):
@@ -33,6 +56,9 @@ class PrecureManagerApp(QMainWindow):
         self.setWindowIcon(QIcon(r"img\icon.ico"))
         self.config = ConfigManager()
         self.tg_manager = TelegramManager()
+        self.sync_manager = SyncManager()
+        self.is_offline = False
+        self.last_device_change = 0
 
         geometry = self.config.get("ui.geometry")
         if geometry:
@@ -48,9 +74,20 @@ class PrecureManagerApp(QMainWindow):
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
-        self.main_layout = QHBoxLayout(central_widget)
+        self.outer_layout = QVBoxLayout(central_widget)
+        self.outer_layout.setContentsMargins(0, 0, 0, 0)
+        self.outer_layout.setSpacing(0)
+
+        self.warning_bar = OfflineWarningBar()
+        self.outer_layout.addWidget(self.warning_bar)
+
+        self.main_container = QWidget()
+        self.main_layout = QHBoxLayout(self.main_container)
+        self.outer_layout.addWidget(self.main_container)
 
         self.init_sidebar()
+
+        self.check_external_drive()
 
         self.tabs = QTabWidget()
         self.main_layout.addWidget(self.tabs, 4)
@@ -85,6 +122,9 @@ class PrecureManagerApp(QMainWindow):
         # so it must be called AFTER init_sidebar() and BEFORE load_settings()
         # which might rely on DB connections being active for model selection.
         self.init_db_connections()
+
+        if not self.is_offline:
+            self.run_startup_sync()
 
         # Ensure all tabs are properly initialized with the correct database connection
         self.registry_tab.update_database("year_db")
@@ -292,6 +332,10 @@ class PrecureManagerApp(QMainWindow):
         help_menu.addAction(self.about_action)
 
     def save_current_tab(self):
+        if self.is_offline:
+            QMessageBox.warning(self, "Guardar", "El sistema está en modo solo lectura. No se pueden guardar cambios.")
+            return
+
         current_tab = self.get_active_data_tab()
         if current_tab:
             # Force commit of active editor
@@ -332,6 +376,9 @@ class PrecureManagerApp(QMainWindow):
             current_tab.add_record()
 
     def migrate_resources_from_excel(self):
+        if self.is_offline:
+            QMessageBox.warning(self, "Migración", "No se puede migrar en modo solo lectura.")
+            return
         migrator = DataMigrator()
         progress = QProgressDialog("Migrando recursos...", "Cancelar", 0, 100, self)
         progress.setWindowTitle("Trabajando con años")
@@ -348,6 +395,9 @@ class PrecureManagerApp(QMainWindow):
             QMessageBox.information(self, "Migración", "Proceso de migración de recursos finalizado.")
 
     def migrate_registry_from_excel(self):
+        if self.is_offline:
+            QMessageBox.warning(self, "Migración", "No se puede migrar en modo solo lectura.")
+            return
         migrator = DataMigrator()
         progress = QProgressDialog("Migrando registros...", "Cancelar", 0, 100, self)
         progress.setWindowTitle("Trabajando con años")
@@ -372,6 +422,9 @@ class PrecureManagerApp(QMainWindow):
             QMessageBox.information(self, "Migración", "Proceso de migración de registros finalizado.")
 
     def regenerate_registry_index(self):
+        if self.is_offline:
+            QMessageBox.warning(self, "Regenerar Índice", "No se puede regenerar en modo solo lectura.")
+            return
         current_year = self.get_current_year()
         dialog = YearRangeDialog(current_year, self)
         dialog.setWindowTitle("Regenerar columna index")
@@ -395,23 +448,35 @@ class PrecureManagerApp(QMainWindow):
             QMessageBox.information(self, "Regenerar Índice", "Proceso finalizado.")
 
     def recalculate_registry_lapses(self):
+        if self.is_offline:
+            QMessageBox.warning(self, "Lapsos", "No se puede recalcular en modo solo lectura.")
+            return
         ops = DBOperations()
         ops.recalculate_registry_lapses("year_db")
         self.registry_tab.model.select()
         QMessageBox.information(self, "Lapsos", "Lapsos recalculados.")
 
     def recalculate_registry_models(self):
+        if self.is_offline:
+            QMessageBox.warning(self, "Modelos", "No se puede recalcular en modo solo lectura.")
+            return
         ops = DBOperations()
         ops.recalculate_registry_models("year_db")
         self.registry_tab.model.select()
         QMessageBox.information(self, "Modelos", "Modelos recalculados.")
 
     def on_update_links_requested(self):
+        if self.is_offline:
+            QMessageBox.warning(self, "Vinculación", "No se puede vincular en modo solo lectura.")
+            return
         year = self.get_current_year()
         self.scan_and_link_resources_ui([year], overwrite=False)
         QMessageBox.information(self, "Vinculación", f"Proceso de actualización para el año {year} completado.")
 
     def on_scan_link_requested(self):
+        if self.is_offline:
+            QMessageBox.warning(self, "Escaneo", "No se puede escanear en modo solo lectura.")
+            return
         current_year = self.get_current_year()
         dialog = YearRangeDialog(current_year, self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
@@ -420,6 +485,9 @@ class PrecureManagerApp(QMainWindow):
             QMessageBox.information(self, "Escaneo", "Proceso de escaneo y vinculación completado.")
 
     def on_scan_new_sd_requested(self):
+        if self.is_offline:
+            QMessageBox.warning(self, "Búsqueda", "No se puede buscar en modo solo lectura.")
+            return
         current_year = self.get_current_year()
         dialog = YearRangeDialog(current_year, self)
         dialog.setWindowTitle("Buscar nuevas soundtracks")
@@ -464,19 +532,27 @@ class PrecureManagerApp(QMainWindow):
         self.resources_tab.model.select()
 
     def on_report_materials_requested(self):
+        if self.is_offline:
+            QMessageBox.warning(self, "Reportar Materiales", "No se pueden reportar materiales en modo solo lectura.")
+            return
         dialog = ReportMaterialsDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             # Refresh registry if it's the active tab
-            self.registry_tab.model.select()
+            if self.registry_tab.model:
+                self.registry_tab.model.select()
 
     def on_tg_download_requested(self):
         dialog = TelegramDownloadDialog(self, self.tg_manager)
         dialog.exec()
 
     def scan_master_folders(self):
+        if self.is_offline:
+            QMessageBox.warning(self, "Escaneo", "No se puede escanear en modo solo lectura.")
+            return
         ops = DBOperations()
         ops.scan_master_folders()
-        self.seasons_tab.model.select()
+        if self.seasons_tab.model:
+            self.seasons_tab.model.select()
         QMessageBox.information(self, "Escaneo", "Escaneo de carpetas maestras finalizado.")
 
     def toggle_sql_consoles(self):
@@ -489,28 +565,69 @@ class PrecureManagerApp(QMainWindow):
         self.seasons_tab.set_console_visible(is_visible)
         self.domains_tab.set_console_visible(is_visible)
 
+    def check_external_drive(self):
+        from db_manager import BASE_DIR_PATH
+        drive = os.path.splitdrive(BASE_DIR_PATH)[0]
+        if drive and os.path.exists(drive + "\\"):
+            self.is_offline = False
+            self.warning_bar.setVisible(False)
+        else:
+            self.is_offline = True
+            self.warning_bar.setVisible(True)
+
     def init_db_connections(self):
-        from db_manager import GLOBAL_DB_PATH
+        from db_manager import GLOBAL_DB_PATH, get_yearly_db_path, is_on_external_drive, get_offline_db_path
+
+        # Decide global path
+        g_path = GLOBAL_DB_PATH
+        if self.is_offline and is_on_external_drive(g_path):
+            g_path = get_offline_db_path(g_path)
+            readonly = True
+        else:
+            readonly = False
 
         db_global = QSqlDatabase.database("global_db", open=False)
         if not db_global.isValid():
             db_global = QSqlDatabase.addDatabase("QSQLITE", "global_db")
 
-        if db_global.databaseName() != GLOBAL_DB_PATH:
+        if db_global.isOpen():
             db_global.close()
-            db_global.setDatabaseName(GLOBAL_DB_PATH)
+
+        db_global.setDatabaseName(g_path)
+        if readonly:
+            db_global.setDatabaseName(f"file:{g_path}?mode=ro")
+            db_global.setConnectOptions("QSQLITE_OPEN_URI")
+        else:
+            db_global.setConnectOptions("")
 
         if not db_global.isOpen():
             db_global.open()
 
+        # Decide yearly path
+        y_path = get_yearly_db_path(self.get_current_year())
+        if self.is_offline:
+            y_path = get_offline_db_path(y_path)
+            y_readonly = True
+        else:
+            y_readonly = False
+
         db_year = QSqlDatabase.database("year_db", open=False)
         if not db_year.isValid():
             db_year = QSqlDatabase.addDatabase("QSQLITE", "year_db")
-            db_year.setDatabaseName(get_yearly_db_path(self.get_current_year()))
+
+        if db_year.isOpen():
+            db_year.close()
+
+        db_year.setDatabaseName(y_path)
+        if y_readonly:
+            db_year.setDatabaseName(f"file:{y_path}?mode=ro")
+            db_year.setConnectOptions("QSQLITE_OPEN_URI")
+        else:
+            db_year.setConnectOptions("")
 
         if not db_year.isOpen():
             if db_year.open():
-                QSqlQuery(db_year).exec(f"ATTACH DATABASE '{GLOBAL_DB_PATH}' AS global_db")
+                QSqlQuery(db_year).exec(f"ATTACH DATABASE '{g_path}' AS global_db")
 
     def init_sidebar(self):
         self.dock = QDockWidget("Años", self)
@@ -547,6 +664,122 @@ class PrecureManagerApp(QMainWindow):
             return 2004
         index = self.year_tree.currentIndex()
         return int(index.data()) if index.isValid() else 2004
+
+    def nativeEvent(self, eventType, message):
+        if eventType == b"windows_generic_MSG":
+            msg = ctypes.wintypes.MSG.from_address(int(message))
+            if msg.message == 0x0219: # WM_DEVICECHANGE
+                # Debounce or just check drive existence
+                self.handle_device_change()
+        return super().nativeEvent(eventType, message)
+
+    def handle_device_change(self):
+        # Debounce 10 seconds
+        now = time.time()
+        if now - self.last_device_change < 10:
+            return
+        self.last_device_change = now
+
+        from db_manager import BASE_DIR_PATH
+        drive = os.path.splitdrive(BASE_DIR_PATH)[0]
+        was_offline = self.is_offline
+        is_now_available = drive and os.path.exists(drive + "\\")
+
+        if was_offline and is_now_available:
+            self.sync_and_reconnect(offline=False)
+        elif not was_offline and not is_now_available:
+            self.sync_and_reconnect(offline=True)
+
+    def close_all_connections(self):
+        # Mandatory: close and remove all connections
+        # Ensure no models are using them
+        for tab in [self.registry_tab, self.resources_tab, self.catalog_tab,
+                    self.opener_tab, self.type_res_tab, self.seasons_tab, self.domains_tab]:
+            if tab.model:
+                tab.model.deleteLater()
+                tab.model = None
+
+        db_year = QSqlDatabase.database("year_db")
+        if db_year.isOpen():
+            db_year.close()
+        # To truly remove the connection, we need to pass the connection name
+        QSqlDatabase.removeDatabase("year_db")
+
+        db_global = QSqlDatabase.database("global_db")
+        if db_global.isOpen():
+            db_global.close()
+        QSqlDatabase.removeDatabase("global_db")
+
+    def sync_and_reconnect(self, offline):
+        # Rule of Gold: close everything before changing sources
+        self.close_all_connections()
+
+        self.is_offline = offline
+        self.warning_bar.setVisible(offline)
+
+        progress = QProgressDialog("Cambiando modo de base de datos...", "Cancelar", 0, 0, self)
+        progress.setWindowTitle("Conectando...")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.show()
+        QApplication.processEvents()
+
+        if not offline:
+            # Check for sync before reconnecting to external drive
+            self.run_startup_sync(callback=lambda: self.finish_reconnect(progress))
+        else:
+            # When going offline, we should sync current state from E: to local if it was rw
+            # but for now we just reconnect to local ro
+            self.finish_reconnect(progress)
+
+    def finish_reconnect(self, progress_dialog):
+        self.init_db_connections()
+
+        # Refresh all tabs
+        self.registry_tab.update_database("year_db")
+        self.resources_tab.update_database("year_db")
+        self.catalog_tab.update_database("global_db")
+        self.opener_tab.update_database("global_db")
+        self.type_res_tab.update_database("global_db")
+        self.seasons_tab.update_database("global_db")
+        self.domains_tab.update_database("global_db")
+
+        progress_dialog.close()
+
+    def run_startup_sync(self, callback=None):
+        from db_manager import GLOBAL_DB_PATH, get_yearly_db_path, get_offline_db_path, is_on_external_drive
+
+        tasks = []
+        # Global DB
+        if is_on_external_drive(GLOBAL_DB_PATH):
+            tasks.append((GLOBAL_DB_PATH, get_offline_db_path(GLOBAL_DB_PATH), "Sincronizando Global DB..."))
+
+        # Yearly DBs
+        for year in range(2004, datetime.now().year + 1):
+            y_path = get_yearly_db_path(year)
+            if os.path.exists(y_path):
+                tasks.append((y_path, get_offline_db_path(y_path), f"Sincronizando año {year}..."))
+
+        if not tasks:
+            if callback: callback()
+            return
+
+        self.sync_progress = QProgressDialog("Sincronizando bases de datos...", "Cancelar", 0, 100, self)
+        self.sync_progress.setWindowModality(Qt.WindowModality.WindowModal)
+
+        def on_finished(success, msg):
+            try:
+                self.sync_manager.task_progress.disconnect()
+                self.sync_manager.sync_finished.disconnect()
+            except: pass
+
+            self.sync_progress.close()
+            if not success:
+                QMessageBox.warning(self, "Sincronización", f"Hubo un problema al sincronizar: {msg}")
+            if callback: callback()
+
+        self.sync_manager.task_progress.connect(lambda cur, tot, lbl: (self.sync_progress.setLabelText(lbl), self.sync_progress.setValue(int(cur/tot*100 if tot > 0 else 100))))
+        self.sync_manager.sync_finished.connect(on_finished)
+        self.sync_manager.perform_sync(tasks)
 
     def on_resize_to_contents_requested(self):
         tab = self.get_active_data_tab()

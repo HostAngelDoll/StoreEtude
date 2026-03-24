@@ -31,7 +31,9 @@ class ConfigManager:
         self.registry = QSettings("MyCompany", "PrecureMediaManager")
         default_path = self.get_default_config_path()
         self.config_path = self.registry.value("config_json_path", default_path)
-        self.cache_path = os.path.join(os.path.dirname(self.config_path), "cache.json")
+        self.config_dir = os.path.dirname(self.config_path)
+        self.cache_path = os.path.join(self.config_dir, "cache.json")
+        self.offline_db_dir = os.path.join(self.config_dir, "offline_dbs")
         
         # Ensure the directory exists
         os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
@@ -196,9 +198,16 @@ class ConfigManager:
                 if f.startswith("session_telegram") and f.endswith(".session"):
                     shutil.move(os.path.join(old_dir, f), os.path.join(new_dir, f))
 
+            # Move offline dbs if they exist
+            old_offline_dir = os.path.join(old_dir, "offline_dbs")
+            if os.path.exists(old_offline_dir):
+                shutil.move(old_offline_dir, os.path.join(new_dir, "offline_dbs"))
+
             # Update paths in memory
             self.config_path = new_path
+            self.config_dir = new_dir
             self.cache_path = os.path.join(new_dir, "cache.json")
+            self.offline_db_dir = os.path.join(new_dir, "offline_dbs")
 
             # Update registry
             self.registry.setValue("config_json_path", new_path)
