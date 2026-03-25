@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableView,
-                             QApplication, QDialogButtonBox, QMessageBox, QHeaderView)
+                             QApplication, QDialogButtonBox, QMessageBox, QHeaderView, QPushButton)
 from PyQt6.QtGui import QIcon, QStandardItemModel, QStandardItem, QKeySequence
 from PyQt6.QtCore import Qt, QEvent
 from datetime import datetime
@@ -38,7 +38,13 @@ class ReportMaterialsDialog(QDialog):
         self.view.setItemDelegateForColumn(6, CatalogDelegate("listen", self))
         self.view.setItemDelegateForColumn(7, CatalogDelegate("write", self))
 
-        self.layout.addWidget(QLabel("Pega los datetimes en la primera columna. Las temporadas y materiales se filtrarán según tu selección."))
+        header_layout = QHBoxLayout()
+        header_layout.addWidget(QLabel("Pega los datetimes en la primera columna. Las temporadas y materiales se filtrarán según tu selección."))
+        header_layout.addStretch()
+        self.btn_import_journal = QPushButton("Importar Jornada")
+        self.btn_import_journal.clicked.connect(self.import_journal)
+        header_layout.addWidget(self.btn_import_journal)
+        self.layout.addLayout(header_layout)
         self.layout.addWidget(self.view)
 
         self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -49,6 +55,62 @@ class ReportMaterialsDialog(QDialog):
 
         self.apply_column_configs()
         self.view.installEventFilter(self)
+        self.check_offline_status()
+
+    def check_offline_status(self):
+        from core.app_state import AppState, AppMode
+        state = AppState()
+        if state.mode == AppMode.OFFLINE:
+            btn_add = self.buttons.button(QDialogButtonBox.StandardButton.Ok)
+            btn_add.setEnabled(False)
+            btn_add.setToolTip("El botón está deshabilitado porque no hay 'E:/' conectado.")
+
+    def import_journal(self):
+        from journals_manager.journal_gui import JournalAdminDialog
+        dialog = JournalAdminDialog(self, selection_mode=True)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            selected_journals = dialog.get_selected_journals_data()
+            if not selected_journals:
+                return
+
+            # Sort by expected date
+            selected_journals.sort(key=lambda x: x.get('fecha_esperada', ''))
+
+            # Find starting row for import
+            start_row = 0
+            is_empty = True
+            for r in range(self.model.rowCount()):
+                has_data = False
+                for c in range(self.model.columnCount()):
+                    if self.model.data(self.model.index(r, c)):
+                        has_data = True
+                        is_empty = False
+                        break
+                if not has_data:
+                    start_row = r
+                    break
+                if r == self.model.rowCount() - 1:
+                    start_row = self.model.rowCount()
+
+            if is_empty:
+                start_row = 0
+
+            current_row = start_row
+            for journal in selected_journals:
+                materials = journal.get('materiales', [])
+                for m in materials:
+                    if current_row >= self.model.rowCount():
+                        self.model.appendRow([QStandardItem("") for _ in range(8)])
+
+                    self.model.setData(self.model.index(current_row, 0), "") # datetime in blank as requested
+                    self.model.setData(self.model.index(current_row, 1), m.get('is_spinoff', "No"))
+                    self.model.setData(self.model.index(current_row, 2), m.get('season', ""))
+                    self.model.setData(self.model.index(current_row, 3), m.get('type_resource', ""))
+                    self.model.setData(self.model.index(current_row, 4), m.get('title_material', ""))
+                    self.model.setData(self.model.index(current_row, 5), m.get('type_repeat', ""))
+                    self.model.setData(self.model.index(current_row, 6), m.get('type_listen', ""))
+                    self.model.setData(self.model.index(current_row, 7), m.get('model_writer', ""))
+                    current_row += 1
 
     def apply_column_configs(self):
         self.header._is_applying_config = True
@@ -56,13 +118,12 @@ class ReportMaterialsDialog(QDialog):
             col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
             col_config = self.config.get_column_config(self.table_name, col_name)
             width = col_config.get("width")
-            locked = col_config.get("locked", False)
-            if locked:
-                self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
+
+            # Use Interactive to allow manual resizing as per user's bug report fix
+            self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+            if width:
                 self.header.resizeSection(i, width)
-            else:
-                self.header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-                if width: self.header.resizeSection(i, width)
+        self.header.setStretchLastSection(True)
         self.header._is_applying_config = False
 
     def eventFilter(self, source, event):

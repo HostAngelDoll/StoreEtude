@@ -962,14 +962,16 @@ class DataTableTab(QWidget):
 
     def resize_to_contents(self):
         if not self.view: return
-        self.view.resizeColumnsToContents()
-        # Save these new widths
         header = self.view.horizontalHeader()
         from config_manager import ConfigManager
         config = ConfigManager()
         for i in range(self.model.columnCount()):
             col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
-            config.set_column_config(self.table_name, col_name, width=header.sectionSize(i), save=False)
+            col_config = config.get_column_config(self.table_name, col_name)
+            # Only auto-resize if not locked
+            if not col_config.get("locked", False):
+                self.view.resizeColumnToContents(i)
+                config.set_column_config(self.table_name, col_name, width=header.sectionSize(i), save=False)
         config.save()
 
     def lock_all_columns(self):
@@ -1032,15 +1034,16 @@ class DataTableTab(QWidget):
             width = col_config.get("width")
             locked = col_config.get("locked", False)
             
-            if locked:
-                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
+            # Requirement: Manual mouse resizing must ALWAYS be allowed.
+            # Fixed and Stretch modes block manual resizing, so we use Interactive.
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
+
+            if width:
                 header.resizeSection(i, width)
-            else:
-                if auto_resize_global:
-                    header.setSectionResizeMode(i, QHeaderView.ResizeMode.Stretch)
-                else:
-                    header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-                    if width:
-                        header.resizeSection(i, width)
+
+        if auto_resize_global:
+            header.setStretchLastSection(True)
+        else:
+            header.setStretchLastSection(False)
         
         header._is_applying_config = False
