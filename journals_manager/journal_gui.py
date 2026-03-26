@@ -59,7 +59,7 @@ class JournalForm(QDialog):
         self.view = QTableView()
         self.view.setModel(self.model)
 
-        from data_table import ColumnHeaderView
+        from ui.table.column_manager import ColumnHeaderView
         self.header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
         self.view.setHorizontalHeader(self.header)
 

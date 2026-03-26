@@ -3,12 +3,13 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableVi
 from PyQt6.QtGui import QIcon, QStandardItemModel, QStandardItem
 from PyQt6.QtCore import Qt
 import os
-from core.whitelist_manager import WhitelistManager
+from network.validator import WhitelistValidator
+from config_manager import ConfigManager
 
 class WhitelistDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.mgr = WhitelistManager()
+        self.mgr = WhitelistValidator(ConfigManager().config_dir)
         self.setWindowIcon(QIcon(os.path.join("img", "icon.ico")))
         self.setWindowTitle("Administrar Lista Blanca de Redes")
         self.resize(800, 450)

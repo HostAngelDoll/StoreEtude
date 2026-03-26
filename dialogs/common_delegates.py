@@ -132,9 +132,11 @@ class TitleMaterialDelegate(QStyledItemDelegate):
             db = self._db_cache[conn_name]
             if db.isOpen(): return db
 
-        from db_manager import get_yearly_db_path, get_offline_db_path
+        from db.schema import get_yearly_db_path
+        from db_manager import get_offline_db_path
         db_path = get_yearly_db_path(year)
         if not os.path.exists(db_path):
+            # TODO: Refactor get_offline_db_path
             db_path = get_offline_db_path(db_path)
             if not os.path.exists(db_path):
                 return None

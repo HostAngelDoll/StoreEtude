@@ -26,7 +26,7 @@ class ReportMaterialsDialog(QDialog):
 
         self.view = QTableView()
         self.view.setModel(self.model)
-        from data_table import ColumnHeaderView
+        from ui.table.column_manager import ColumnHeaderView
         self.header = ColumnHeaderView(Qt.Orientation.Horizontal, self.view)
         self.view.setHorizontalHeader(self.header)
 
@@ -148,6 +148,7 @@ class ReportMaterialsDialog(QDialog):
 
     def process_addition(self):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        # TODO: Refactor this to use Repo/Service
         from db_operations import DBOperations
         materials_list = []
         for r in range(self.model.rowCount()):
