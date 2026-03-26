@@ -71,6 +71,10 @@ class MainWindow(QMainWindow):
     def on_year_selected(self, index):
         if index.isValid(): self.controller.open_year_db(int(index.data()))
 
+    def get_current_year(self):
+        idx = self.year_tree.currentIndex()
+        return int(idx.data()) if idx.isValid() else 2004
+
     def update_offline_mode(self, offline):
         self.warning_bar.setVisible(offline)
 
