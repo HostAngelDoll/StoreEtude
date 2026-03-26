@@ -1,3 +1,7 @@
 openpyxl
 PyQt6
 telethon
+flask
+waitress
+firebase-admin
+werkzeug

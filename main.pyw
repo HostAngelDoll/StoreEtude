@@ -34,6 +34,8 @@ from resource_management import ResourceScanner
 from db_operations import DBOperations
 from telegram_manager import TelegramManager
 from sync_manager import SyncManager
+from core.api_server import APIServerThread
+from core.firebase_manager import FirebaseManager
 
 class PrecureManagerApp(QMainWindow):
     def __init__(self):
@@ -46,6 +48,8 @@ class PrecureManagerApp(QMainWindow):
         self.db_manager = DBConnectionManager()
         self.tg_manager = TelegramManager()
         self.sync_manager = SyncManager()
+        self.api_server_thread = APIServerThread()
+        self.fb_manager = FirebaseManager()
 
         self.last_device_change = 0
 
@@ -147,6 +151,7 @@ class PrecureManagerApp(QMainWindow):
         self.update_menu_states()
 
     def on_report_materials_requested(self):
+        self.sync_firebase_journals()
         dialog = ReportMaterialsDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.registry_tab.model.select()
@@ -156,6 +161,7 @@ class PrecureManagerApp(QMainWindow):
         dialog.exec()
 
     def on_manage_journals_requested(self):
+        self.sync_firebase_journals()
         dialog = JournalAdminDialog(self)
         dialog.exec()
 
@@ -444,6 +450,42 @@ class PrecureManagerApp(QMainWindow):
 
         if self.state.mode == AppMode.ONLINE:
             self.run_startup_sync()
+
+        self.sync_firebase_journals()
+        self.update_api_server_status()
+
+    def sync_firebase_journals(self):
+        if not self.config.get("firebase.db_url"):
+            return
+
+        progress = QProgressDialog("Sincronizando jornadas con Firebase...", "Cancelar", 0, 100, self)
+        progress.setWindowTitle("Firebase Sync")
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.show()
+
+        def update_fb_progress(cur, tot, lbl):
+            progress.setMaximum(tot)
+            progress.setValue(cur)
+            progress.setLabelText(lbl)
+            QApplication.processEvents()
+
+        success, msg = self.fb_manager.download_journals(progress_callback=update_fb_progress)
+        progress.close()
+
+        if not success:
+            self.log(f"Firebase Sync Error: {msg}", is_error=True)
+        else:
+            self.log(msg)
+
+    def update_api_server_status(self):
+        enabled = self.config.get("api.enabled", False)
+        if enabled:
+            if not self.api_server_thread.isRunning():
+                self.api_server_thread.start()
+        else:
+            if self.api_server_thread.isRunning():
+                # Flask/Waitress doesn't provide a clean stop from a thread easily without more logic
+                pass
 
     def restore_window_geometry_safe(self):
         is_max = self.config.get("ui.maximized", True)
