@@ -3,6 +3,7 @@ import os
 import re
 import subprocess
 import json
+import socket
 
 # Add parent directory to path to import ConfigManager
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -38,7 +39,6 @@ class WhitelistManager:
             print(f"Error saving whitelist: {e}")
 
     def add_network(self, network_data):
-        # network_data: {name, ssid, bssid, gateway, ip, type}
         self.whitelist.append(network_data)
         self.save()
 
@@ -52,78 +52,72 @@ class WhitelistManager:
 
     def get_current_network_info(self):
         """
-        Returns info about current network connection.
-        Returns a list of dicts (could be multiple interfaces)
+        Improved network detection logic for Windows environments.
         """
         networks = []
 
-        # 1. Get IP and Gateway using ipconfig
+        # 1. Get WiFi info using netsh
+        wifi_info = {"ssid": None, "bssid": None}
         try:
-            # We use try/except because ipconfig might not exist on all environments
-            # but this app is primarily Windows-focused
-            process = subprocess.run(["ipconfig"], capture_output=True, text=True, shell=True)
-            ipconfig_output = process.stdout
+            netsh_output = subprocess.check_output("netsh wlan show interfaces", shell=True).decode(errors="ignore")
+            wifi_info["ssid"] = self._extract_value(netsh_output, r"SSID")
+            wifi_info["bssid"] = self._extract_value(netsh_output, r"BSSID")
+        except:
+            pass
 
-            # Extract sections
-            sections = re.split(r'\n(?=[^\s])', ipconfig_output)
-            for section in sections:
-                if "IPv4 Address" in section or "Dirección IPv4" in section:
-                    ip_match = re.search(r'(?:IPv4 Address|Dirección IPv4)[ .:]+ ([\d.]+)', section)
-                    gw_match = re.search(r'(?:Default Gateway|Puerta de enlace predeterminada)[ .:]+ ([\d.]+)', section)
+        # 2. Get IP info using socket
+        local_ip = ""
+        try:
+            hostname = socket.gethostname()
+            local_ip = socket.gethostbyname(hostname)
+        except:
+            pass
 
-                    if ip_match:
-                        ip = ip_match.group(1)
-                        gw = gw_match.group(1) if gw_match else ""
+        # 3. Get Gateway info using ipconfig
+        gateway = ""
+        try:
+            ipconfig_output = subprocess.check_output("ipconfig", shell=True).decode(errors="ignore")
+            # We look for the gateway in a way that handles multiple adapters
+            # but usually the one with the default gateway is the active one.
+            # The regex searches for the first occurrence of 'Default Gateway' or 'Puerta de enlace predeterminada'
+            gw_match = re.search(r"(?:Default Gateway|Puerta de enlace predeterminada)[ .]*: ([\d\.]+)", ipconfig_output)
+            if gw_match:
+                gateway = gw_match.group(1)
+        except:
+            pass
 
-                        # Determine if it's WiFi or Ethernet based on section header
-                        net_type = "Ethernet"
-                        if any(kw in section for kw in ["Wi-Fi", "Wireless", "Inalámbrica"]):
-                            net_type = "WiFi"
+        # If we have WiFi info, create a WiFi entry
+        if wifi_info["ssid"] or wifi_info["bssid"]:
+            networks.append({
+                "ip": local_ip,
+                "gateway": gateway,
+                "type": "WiFi",
+                "ssid": wifi_info["ssid"] or "",
+                "bssid": wifi_info["bssid"] or "",
+                "name": wifi_info["ssid"] or "WiFi Network"
+            })
 
-                        net_info = {
-                            "ip": ip,
-                            "gateway": gw,
-                            "type": net_type,
-                            "ssid": "",
-                            "bssid": "",
-                            "name": ""
-                        }
-
-                        # 2. If it's WiFi, get SSID and BSSID using netsh
-                        if net_type == "WiFi":
-                            try:
-                                netsh_process = subprocess.run(["netsh", "wlan", "show", "interfaces"], capture_output=True, text=True, shell=True)
-                                netsh_output = netsh_process.stdout
-                                ssid_match = re.search(r' SSID[ ]+: (.+)', netsh_output)
-                                bssid_match = re.search(r' BSSID[ ]+: (.+)', netsh_output)
-                                if ssid_match:
-                                    net_info["ssid"] = ssid_match.group(1).strip()
-                                if bssid_match:
-                                    net_info["bssid"] = bssid_match.group(1).strip()
-                                net_info["name"] = net_info["ssid"]
-                            except:
-                                pass
-
-                        if not net_info["name"]:
-                            # For Ethernet, we might use the adapter name
-                            name_match = re.search(r'^(.*?):', section.strip())
-                            if name_match:
-                                net_info["name"] = name_match.group(1).strip()
-
-                        networks.append(net_info)
-        except Exception as e:
-            print(f"Error getting network info: {e}")
+        # If we have an IP but no WiFi was detected, assume Ethernet or some other active connection
+        elif local_ip and local_ip != "127.0.0.1":
+            networks.append({
+                "ip": local_ip,
+                "gateway": gateway,
+                "type": "Ethernet",
+                "ssid": "",
+                "bssid": "",
+                "name": "Ethernet Connection"
+            })
 
         return networks
 
+    def _extract_value(self, text, label):
+        # Escaping label just in case, and making it flexible for any characters before it
+        match = re.search(rf"[ ]+{re.escape(label)}[ .]*: (.+)", text)
+        if match:
+            return match.group(1).strip()
+        return None
+
     def check_connection_status(self):
-        """
-        Returns:
-        - "offline": No internet/network connection
-        - "accepted": Connected to a whitelisted network
-        - "unacceptable": Connected to a network NOT in whitelist
-        - "empty": Whitelist is empty
-        """
         if not self.whitelist:
             return "empty"
 
@@ -133,22 +127,16 @@ class WhitelistManager:
 
         for curr in current_networks:
             for allowed in self.whitelist:
-                # BSSID match is primary
-                if curr['bssid'] and allowed['bssid'] and curr['bssid'].lower() == allowed['bssid'].lower():
+                # BSSID match is primary for WiFi
+                if curr['type'] == "WiFi" and curr['bssid'] and allowed['bssid'] and curr['bssid'].lower() == allowed['bssid'].lower():
                     return "accepted"
 
-                # If Ethernet or BSSID not available, check Gateway + SSID
-                # Note: BSSID is more reliable for identifying a specific AP.
-                # If not present, we use Gateway as a second-best option.
-                gw_match = curr['gateway'] and allowed['gateway'] and curr['gateway'] == allowed['gateway']
-                ssid_match = curr['ssid'] and allowed['ssid'] and curr['ssid'].lower() == allowed['ssid'].lower()
-
-                if gw_match:
+                # Fallback to Gateway + SSID for WiFi or Gateway for Ethernet
+                if curr['gateway'] and allowed['gateway'] and curr['gateway'] == allowed['gateway']:
                     if curr['type'] == "WiFi":
-                        if ssid_match:
+                        if curr['ssid'] and allowed['ssid'] and curr['ssid'].lower() == allowed['ssid'].lower():
                             return "accepted"
-                    elif curr['type'] == "Ethernet":
-                        # For ethernet, gateway + name/type might be enough
+                    else:
                         return "accepted"
 
         return "unacceptable"
