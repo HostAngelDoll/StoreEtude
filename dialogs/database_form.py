@@ -1,137 +1,80 @@
-from PyQt6.QtWidgets import (QDialog, QFormLayout, QLineEdit, QSpinBox,
-                             QCheckBox, QDialogButtonBox, QMessageBox, QComboBox)
-from PyQt6.QtSql import QSqlRelationalTableModel, QSqlRelation, QSqlTableModel, QSqlDatabase
-from PyQt6.QtGui import QIcon
-import os
+from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QLineEdit, QPushButton, QHBoxLayout, QMessageBox, QSpinBox, QCheckBox, QComboBox)
+from PyQt6.QtCore import Qt
+from PyQt6.QtSql import QSqlRelationalDelegate
 
 class DatabaseForm(QDialog):
-    def __init__(self, model, row=-1, parent=None):
+    def __init__(self, model, row_index=None, parent=None):
         super().__init__(parent)
-        self.setWindowIcon(QIcon(os.path.join("img", "icon.ico")))
         self.model = model
-        self.row = row
-        self.record = model.record(row) if row >= 0 else model.record()
-        self.setWindowTitle("Añadir Registro" if row < 0 else "Editar Registro")
-        self.setMinimumWidth(400)
-
-        self.layout = QFormLayout(self)
+        self.row_index = row_index
+        self.setWindowTitle("Añadir Registro" if row_index is None else "Editar Registro")
         self.widgets = {}
-        self._relation_models = [] # Prevent GC
+        self.init_ui()
+        if row_index is not None: self.load_data()
 
-        is_relational = isinstance(model, QSqlRelationalTableModel)
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        form_layout = QFormLayout()
 
-        for i in range(self.record.count()):
-            field_name = self.record.fieldName(i)
-            if field_name.lower() == "idx" and row < 0:
-                continue
+        for i in range(self.model.columnCount()):
+            field_name = self.model.record().fieldName(i)
+            label_text = self.model.headerData(i, Qt.Orientation.Horizontal)
 
-            label = field_name.replace("_", " ").title()
-
-            # Check if this field has a relation
-            relation = model.relation(i) if is_relational else QSqlRelation()
-
-            # Special case for T_Registry which no longer uses QSqlRelationalTableModel
-            if not relation.isValid() and model.tableName() == "T_Registry":
-                if field_name == "title_material":
-                    relation = QSqlRelation("T_Resources", "title_material", "title_material")
-                elif field_name == "type_repeat":
-                    relation = QSqlRelation("T_Type_Catalog_Reg", "type", "type")
-                elif field_name == "type_listen":
-                    relation = QSqlRelation("T_Type_Catalog_Reg", "type", "type")
-                elif field_name == "model_writer":
-                    relation = QSqlRelation("T_Type_Catalog_Reg", "type", "type")
-
-            if relation.isValid():
-                widget = QComboBox()
-                db = QSqlDatabase.database(model.database().connectionName())
-
-                if is_relational and model.relation(i).isValid():
-                    rel_model = model.relationModel(i)
-                    if rel_model and rel_model.rowCount() == 0:
-                        rel_model.select()
-                else:
-                    # Manually create and filter the relation model
-                    rel_model = QSqlTableModel(self, db)
-                    rel_model.setTable(relation.tableName())
-                    if model.tableName() == "T_Registry":
-                        if field_name == "type_repeat": rel_model.setFilter("category = 'repeat'")
-                        elif field_name == "type_listen": rel_model.setFilter("category = 'listen'")
-                        elif field_name == "model_writer": rel_model.setFilter("category = 'write'")
-                    rel_model.select()
-                    self._relation_models.append(rel_model)
-
-                widget.addItem("", None)
-                for rel_row in range(rel_model.rowCount()):
-                    display_val = rel_model.data(rel_model.index(rel_row, rel_model.fieldIndex(relation.displayColumn())))
-                    key_val = rel_model.data(rel_model.index(rel_row, rel_model.fieldIndex(relation.indexColumn())))
-                    widget.addItem(str(display_val), key_val)
-
-                if row >= 0:
-                    current_val = self.record.value(i)
-                    idx = widget.findData(current_val)
-                    if idx >= 0:
-                        widget.setCurrentIndex(idx)
-                    else:
-                        widget.setCurrentIndex(0)
-                else:
-                    widget.setCurrentIndex(0)
-            elif "is_" in field_name.lower():
+            # Simple heuristic for widget type based on column name or model info
+            # In a real app we'd use meta-data, but here we can infer from common names
+            if "is_" in field_name.lower():
                 widget = QCheckBox()
-                if row >= 0:
-                    widget.setChecked(bool(self.record.value(i)))
-            elif "total_" in field_name.lower() or "_num" in field_name.lower() or "episode_" in field_name.lower():
+                self.widgets[i] = widget
+            elif "ep_num" in field_name.lower() or "total" in field_name.lower():
                 widget = QSpinBox()
                 widget.setRange(0, 9999)
-                if row >= 0:
-                    try:
-                        widget.setValue(int(self.record.value(i)))
-                    except (TypeError, ValueError):
-                        widget.setValue(0)
+                self.widgets[i] = widget
+            elif self.model.relation(i).isValid():
+                widget = QComboBox()
+                rel_model = self.model.relationModel(i)
+                widget.setModel(rel_model)
+                widget.setModelColumn(rel_model.fieldIndex(self.model.relation(i).displayColumn()))
+                self.widgets[i] = widget
             else:
                 widget = QLineEdit()
-                if row >= 0:
-                    widget.setText(str(self.record.value(i) or ""))
+                self.widgets[i] = widget
 
-            self.layout.addRow(label, widget)
-            self.widgets[field_name] = widget
+            form_layout.addRow(label_text, widget)
 
-        self.buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
-        self.buttons.accepted.connect(self.accept)
-        self.buttons.rejected.connect(self.reject)
-        self.layout.addRow(self.buttons)
+        layout.addLayout(form_layout)
 
-    def accept(self):
-        for i in range(self.record.count()):
-            field_name = self.record.fieldName(i)
-            if not self.record.isGenerated(i):
-                continue
+        btn_layout = QHBoxLayout()
+        self.btn_save, self.btn_cancel = QPushButton("Guardar"), QPushButton("Cancelar")
+        btn_layout.addStretch(); btn_layout.addWidget(self.btn_save); btn_layout.addWidget(self.btn_cancel)
+        layout.addLayout(btn_layout)
 
-            if field_name in self.widgets:
-                widget = self.widgets[field_name]
-                if isinstance(widget, QCheckBox):
-                    self.record.setValue(i, 1 if widget.isChecked() else 0)
-                elif isinstance(widget, QSpinBox):
-                    self.record.setValue(i, widget.value())
-                elif isinstance(widget, QComboBox):
-                    key_val = widget.currentData()
-                    self.record.setValue(i, key_val)
-                else:
-                    self.record.setValue(i, widget.text())
+        self.btn_save.clicked.connect(self.on_save_clicked)
+        self.btn_cancel.clicked.connect(self.reject)
 
-        db = self.model.database()
-        db.transaction()
+    def load_data(self):
+        for i, widget in self.widgets.items():
+            val = self.model.data(self.model.index(self.row_index, i))
+            if isinstance(widget, QCheckBox): widget.setChecked(bool(val))
+            elif isinstance(widget, QSpinBox): widget.setValue(int(val) if val else 0)
+            elif isinstance(widget, QComboBox):
+                idx = widget.findText(str(val))
+                if idx >= 0: widget.setCurrentIndex(idx)
+            else: widget.setText(str(val) if val is not None else "")
 
-        success = False
-        if self.row >= 0:
-            if self.model.setRecord(self.row, self.record):
-                success = self.model.submitAll()
-        else:
-            if self.model.insertRecord(-1, self.record):
-                success = self.model.submitAll()
+    def on_save_clicked(self):
+        if self.row_index is None: self.model.insertRow(self.model.rowCount())
+        row = self.row_index if self.row_index is not None else self.model.rowCount() - 1
+        for i, widget in self.widgets.items():
+            if isinstance(widget, QCheckBox): val = 1 if widget.isChecked() else 0
+            elif isinstance(widget, QSpinBox): val = widget.value()
+            elif isinstance(widget, QComboBox):
+                # For relational models, we need the actual ID (value column)
+                rel = self.model.relation(i)
+                rel_model = self.model.relationModel(i)
+                val = rel_model.data(rel_model.index(widget.currentIndex(), rel_model.fieldIndex(rel.indexColumn())))
+            else: val = widget.text() if widget.text() else None
 
-        if success:
-            db.commit()
-            super().accept()
-        else:
-            db.rollback()
-            QMessageBox.critical(self, "Error", f"No se pudo guardar: {self.model.lastError().text()}")
+            self.model.setData(self.model.index(row, i), val)
+
+        if self.model.submitAll(): self.accept()
+        else: QMessageBox.critical(self, "Error", f"No se pudo guardar: {self.model.lastError().text()}")
