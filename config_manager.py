@@ -209,6 +209,11 @@ class ConfigManager:
             if os.path.exists(old_journals_dir):
                 shutil.move(old_journals_dir, os.path.join(new_dir, "journals"))
 
+            # Move whitelist if exists
+            old_whitelist = os.path.join(old_dir, "whitelist.json")
+            if os.path.exists(old_whitelist):
+                shutil.move(old_whitelist, os.path.join(new_dir, "whitelist.json"))
+
             # Update paths in memory
             self.config_path = new_path
             self.config_dir = new_dir

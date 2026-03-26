@@ -83,9 +83,16 @@ class TypeResourceDelegate(QStyledItemDelegate):
 class TitleMaterialDelegate(QStyledItemDelegate):
     _db_cache = {}
 
+    def __init__(self, parent=None, allow_user_selection=False):
+        super().__init__(parent)
+        self.allow_user_selection = allow_user_selection
+
     def createEditor(self, parent, option, index):
         editor = QComboBox(parent)
         editor.addItem("", None)
+        if self.allow_user_selection:
+            editor.addItem("[User selection]", "[User selection]")
+
         season = index.model().data(index.model().index(index.row(), 2))
         type_res = index.model().data(index.model().index(index.row(), 3))
         if not season:

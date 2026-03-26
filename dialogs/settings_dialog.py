@@ -7,6 +7,8 @@ import os
 from config_manager import ConfigManager
 from .chat_selection import ChatSelectionDialog
 from .column_management import ColumnManagementDialog
+from .whitelist_dialog import WhitelistDialog
+from core.whitelist_manager import WhitelistManager
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None, tg_manager=None):
@@ -117,6 +119,22 @@ class SettingsDialog(QDialog):
 
         tg_group.setLayout(tg_layout)
         self.layout.addWidget(tg_group)
+
+        # Network Whitelist Group
+        net_group = QGroupBox("Seguridad de Red")
+        net_layout = QFormLayout()
+
+        self.whitelist_enabled_cb = QCheckBox()
+        self.whitelist_enabled_cb.setChecked(self.config.get("security.whitelist_enabled", False))
+        net_layout.addRow("Modo lista blanca de redes:", self.whitelist_enabled_cb)
+
+        self.btn_manage_whitelist = QPushButton("Administrar lista blanca de redes")
+        self.btn_manage_whitelist.clicked.connect(self.manage_whitelist)
+        self.update_whitelist_tooltip()
+        net_layout.addRow(self.btn_manage_whitelist)
+
+        net_group.setLayout(net_layout)
+        self.layout.addWidget(net_group)
 
         # Advanced/Management Area
         mgmt_layout = QHBoxLayout()
@@ -244,6 +262,26 @@ class SettingsDialog(QDialog):
             self.config.clear_cache("first_files")
             QMessageBox.information(self, "Limpiar Caché", "Caché borrada correctamente.")
 
+    def manage_whitelist(self):
+        dialog = WhitelistDialog(self)
+        dialog.exec()
+        self.update_whitelist_tooltip()
+
+    def update_whitelist_tooltip(self):
+        wm = WhitelistManager()
+        status = wm.check_connection_status()
+        if status == "accepted":
+            tooltip = "Conectado a una red aceptada."
+        elif status == "unacceptable":
+            tooltip = "Conectado a una red NO aceptada o fuera de control."
+        elif status == "offline":
+            tooltip = "No hay conexión a internet/red."
+        elif status == "empty":
+            tooltip = "No hay redes añadidas a la lista blanca todavía."
+        else:
+            tooltip = "Estado de red desconocido."
+        self.btn_manage_whitelist.setToolTip(tooltip)
+
     def validate_and_save(self):
         base_path = self.base_dir_edit.text()
         db_path = self.global_db_edit.text()
@@ -269,6 +307,7 @@ class SettingsDialog(QDialog):
         self.config.set("ui.sidebar_visible", self.show_sidebar_cb.isChecked(), save=False)
         self.config.set("ui.console_visible", self.show_console_cb.isChecked(), save=False)
         self.config.set("ui.theme", self.theme_combo.currentText(), save=False)
+        self.config.set("security.whitelist_enabled", self.whitelist_enabled_cb.isChecked(), save=False)
 
         self.config.set("telegram.api_id", self.api_id_edit.text(), save=False)
         self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=True) # Last one saves

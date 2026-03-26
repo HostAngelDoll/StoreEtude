@@ -66,7 +66,7 @@ class JournalForm(QDialog):
         self.view.setItemDelegateForColumn(1, SpinoffDelegate(self))
         self.view.setItemDelegateForColumn(2, SeasonDelegate(self))
         self.view.setItemDelegateForColumn(3, TypeResourceDelegate(self))
-        self.view.setItemDelegateForColumn(4, TitleMaterialDelegate(self))
+        self.view.setItemDelegateForColumn(4, TitleMaterialDelegate(self, allow_user_selection=True))
         self.view.setItemDelegateForColumn(5, CatalogDelegate("repeat", self))
         self.view.setItemDelegateForColumn(6, CatalogDelegate("listen", self))
         self.view.setItemDelegateForColumn(7, CatalogDelegate("write", self))
