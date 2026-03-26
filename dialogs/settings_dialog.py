@@ -136,6 +136,47 @@ class SettingsDialog(QDialog):
         net_group.setLayout(net_layout)
         self.layout.addWidget(net_group)
 
+        # API Server Group
+        api_group = QGroupBox("Servidor API")
+        api_layout = QFormLayout()
+
+        self.api_enabled_cb = QCheckBox("Exponer materiales a la red local")
+        self.api_enabled_cb.setChecked(self.config.get("api.enabled", False))
+        api_layout.addRow(self.api_enabled_cb)
+
+        self.api_port_edit = QLineEdit(str(self.config.get("api.port", 9090)))
+        api_layout.addRow("Puerto API:", self.api_port_edit)
+
+        api_group.setLayout(api_layout)
+        self.layout.addWidget(api_group)
+
+        # Firebase Group
+        fb_group = QGroupBox("Firebase Connector")
+        fb_layout = QFormLayout()
+
+        self.fb_url_edit = QLineEdit(self.config.get("firebase.db_url", ""))
+        self.fb_url_edit.textChanged.connect(self.update_fb_btns_state)
+        fb_layout.addRow("URL de Base de Datos:", self.fb_url_edit)
+
+        self.fb_ref_edit = QLineEdit(self.config.get("firebase.db_ref_journals", ""))
+        fb_layout.addRow("Referencia Jornadas:", self.fb_ref_edit)
+
+        self.fb_creds_label = QLabel()
+        self.update_fb_creds_label(self.config.get("firebase.credentials_path", ""))
+
+        self.btn_browse_fb_creds = QPushButton("Anexar Credenciales JSON")
+        self.btn_browse_fb_creds.clicked.connect(self.browse_fb_creds)
+
+        fb_creds_h_layout = QHBoxLayout()
+        fb_creds_h_layout.addWidget(self.fb_creds_label)
+        fb_creds_h_layout.addStretch()
+        fb_creds_h_layout.addWidget(self.btn_browse_fb_creds)
+        fb_layout.addRow("Credenciales:", fb_creds_h_layout)
+
+        fb_group.setLayout(fb_layout)
+        self.layout.addWidget(fb_group)
+        self.update_fb_btns_state()
+
         # Advanced/Management Area
         mgmt_layout = QHBoxLayout()
         self.btn_manage_columns = QPushButton("Administrar Anchos de Columnas")
@@ -244,6 +285,30 @@ class SettingsDialog(QDialog):
         if file_path:
             self.global_db_edit.setText(file_path)
 
+    def browse_fb_creds(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Seleccionar Credenciales Firebase", "", "JSON (*.json)")
+        if file_path:
+            self.update_fb_creds_label(file_path)
+
+    def update_fb_creds_label(self, path):
+        if not path:
+            self.fb_creds_label.setText('<span style="color: grey;">No seleccionado</span>')
+            self._fb_creds_path = ""
+            return
+
+        from core.firebase_manager import FirebaseManager
+        fm = FirebaseManager()
+        if fm.validate_credentials(path):
+            self.fb_creds_label.setText('<span style="color: green;">Válido</span>')
+            self._fb_creds_path = path
+        else:
+            self.fb_creds_label.setText('<span style="color: red;">Inválido</span>')
+            self._fb_creds_path = ""
+
+    def update_fb_btns_state(self):
+        url = self.fb_url_edit.text().strip()
+        self.btn_browse_fb_creds.setEnabled(bool(url))
+
     def move_config_json(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "Mover archivo de ajustes", self.config_path_edit.text(), "JSON (*.json)")
         if file_path:
@@ -309,7 +374,22 @@ class SettingsDialog(QDialog):
         self.config.set("ui.theme", self.theme_combo.currentText(), save=False)
         self.config.set("security.whitelist_enabled", self.whitelist_enabled_cb.isChecked(), save=False)
 
+        # API
+        self.config.set("api.enabled", self.api_enabled_cb.isChecked(), save=False)
+        try:
+            self.config.set("api.port", int(self.api_port_edit.text()), save=False)
+        except: pass
+
+        # Firebase
+        self.config.set("firebase.db_url", self.fb_url_edit.text(), save=False)
+        self.config.set("firebase.db_ref_journals", self.fb_ref_edit.text(), save=False)
+        self.config.set("firebase.credentials_path", getattr(self, '_fb_creds_path', ""), save=False)
+
         self.config.set("telegram.api_id", self.api_id_edit.text(), save=False)
         self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=True) # Last one saves
+
+        # Update API server status in main window
+        if self.parent() and hasattr(self.parent(), "update_api_server_status"):
+            self.parent().update_api_server_status()
 
         self.accept()
