@@ -10,6 +10,7 @@ class TableFilter:
         for r in range(model.rowCount()):
             vals.add(model.data(model.index(r, col_index)))
 
+        # In current FilterMenu, it expects a list
         menu = FilterMenu(list(vals), self.table_tab.filter_manager.active_filters.get(col_index), self.table_tab)
         menu.filter_requested.connect(lambda sel: self.table_tab.filter_manager.apply_filter(col_index, sel))
         menu.sort_requested.connect(lambda order: (model.sort(col_index, order), model.select()))

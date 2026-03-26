@@ -7,16 +7,16 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from werkzeug.utils import secure_filename
 
 from config_manager import ConfigManager
-from core.whitelist_manager import WhitelistManager
+from network.validator import WhitelistValidator
 from journals_manager.journal_logic import JournalManager
-from db_manager import get_yearly_db_path, BASE_DIR_PATH
+from db.schema import get_yearly_db_path, BASE_DIR_PATH
 
 class APIServerThread(QThread):
     def __init__(self):
         super().__init__()
         self.app = Flask(__name__)
         self.config = ConfigManager()
-        self.whitelist_manager = WhitelistManager()
+        self.whitelist_manager = WhitelistValidator(self.config.config_dir)
         self.journal_manager = JournalManager()
         self._setup_routes()
         self.running = False
@@ -42,7 +42,6 @@ class APIServerThread(QThread):
 
             db_path = get_yearly_db_path(year)
             if not os.path.exists(db_path):
-                # Fallback to offline DB if exists
                 from db_manager import get_offline_db_path
                 db_path = get_offline_db_path(db_path)
                 if not os.path.exists(db_path):
@@ -52,7 +51,8 @@ class APIServerThread(QThread):
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
 
-                from db_manager import GLOBAL_DB_PATH, get_offline_db_path
+                from db.schema import GLOBAL_DB_PATH
+                from db_manager import get_offline_db_path
                 g_path = GLOBAL_DB_PATH
                 if not os.path.exists(g_path):
                     g_path = get_offline_db_path(g_path)
@@ -108,7 +108,6 @@ class APIServerThread(QThread):
             if not self._is_drive_connected():
                 return jsonify({"error": "External drive disconnected. Resource exposure unavailable."}), 503
 
-            # Sanitization
             safe_name = secure_filename(filename)
 
             db_path = get_yearly_db_path(year)
@@ -121,7 +120,8 @@ class APIServerThread(QThread):
             try:
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
-                from db_manager import GLOBAL_DB_PATH, get_offline_db_path
+                from db.schema import GLOBAL_DB_PATH
+                from db_manager import get_offline_db_path
                 g_path = GLOBAL_DB_PATH
                 if not os.path.exists(g_path):
                     g_path = get_offline_db_path(g_path)
@@ -131,8 +131,6 @@ class APIServerThread(QThread):
                 else:
                     return jsonify({"error": "Global DB not found"}), 404
 
-                # Find the relative path for this filename in this year/type
-                # We check both relative_path_of_file and relative_path_of_soundtracks
                 query = """
                     SELECT r.relative_path_of_file, r.relative_path_of_soundtracks
                     FROM T_Resources r
