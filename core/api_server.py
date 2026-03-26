@@ -27,11 +27,18 @@ class APIServerThread(QThread):
             return True
         return self.whitelist_manager.check_connection_status() == "accepted"
 
+    def _is_drive_connected(self):
+        base_dir = self.config.get("base_dir_path")
+        return os.path.exists(base_dir)
+
     def _setup_routes(self):
         @self.app.route('/files/<year>/<type_material>', methods=['GET'])
         def list_files(year, type_material):
             if not self._is_allowed():
                 return jsonify({"error": "Unauthorized network"}), 403
+
+            if not self._is_drive_connected():
+                return jsonify({"error": "External drive disconnected. Resource exposure unavailable."}), 503
 
             db_path = get_yearly_db_path(year)
             if not os.path.exists(db_path):
@@ -97,6 +104,9 @@ class APIServerThread(QThread):
         def download_file(year, type_material, filename):
             if not self._is_allowed():
                 return jsonify({"error": "Unauthorized network"}), 403
+
+            if not self._is_drive_connected():
+                return jsonify({"error": "External drive disconnected. Resource exposure unavailable."}), 503
 
             # Sanitization
             safe_name = secure_filename(filename)

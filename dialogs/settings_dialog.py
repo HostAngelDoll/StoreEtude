@@ -1,6 +1,7 @@
 from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QLineEdit, QHBoxLayout,
                              QPushButton, QGroupBox, QCheckBox, QComboBox, QLabel,
-                             QDialogButtonBox, QFileDialog, QMessageBox, QApplication, QInputDialog)
+                             QDialogButtonBox, QFileDialog, QMessageBox, QApplication, QInputDialog,
+                             QTabWidget, QWidget)
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt
 import os
@@ -20,10 +21,14 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(500)
 
         self.layout = QVBoxLayout(self)
+        self.tabs = QTabWidget()
+        self.layout.addWidget(self.tabs)
 
-        # Paths Group
-        paths_group = QGroupBox("Rutas")
-        paths_layout = QFormLayout()
+        # --- Tab: Rutas ---
+        rutas_tab = QWidget()
+        rutas_layout = QVBoxLayout(rutas_tab)
+        paths_group = QGroupBox("Configuración de Rutas")
+        paths_form = QFormLayout()
 
         self.base_dir_edit = QLineEdit(self.config.get("base_dir_path"))
         self.btn_browse_base = QPushButton("...")
@@ -31,7 +36,7 @@ class SettingsDialog(QDialog):
         base_h_layout = QHBoxLayout()
         base_h_layout.addWidget(self.base_dir_edit)
         base_h_layout.addWidget(self.btn_browse_base)
-        paths_layout.addRow("Ruta Base Recursos:", base_h_layout)
+        paths_form.addRow("Ruta Base Recursos:", base_h_layout)
 
         self.global_db_edit = QLineEdit(self.config.get("global_db_path"))
         self.btn_browse_db = QPushButton("...")
@@ -39,7 +44,7 @@ class SettingsDialog(QDialog):
         db_h_layout = QHBoxLayout()
         db_h_layout.addWidget(self.global_db_edit)
         db_h_layout.addWidget(self.btn_browse_db)
-        paths_layout.addRow("Ruta DB Global:", db_h_layout)
+        paths_form.addRow("Ruta DB Global:", db_h_layout)
 
         self.config_path_edit = QLineEdit(self.config.config_path)
         self.config_path_edit.setReadOnly(True)
@@ -49,52 +54,60 @@ class SettingsDialog(QDialog):
         config_h_layout = QHBoxLayout()
         config_h_layout.addWidget(self.config_path_edit)
         config_h_layout.addWidget(self.btn_move_config)
-        paths_layout.addRow("Ubicación de Ajustes:", config_h_layout)
+        paths_form.addRow("Ubicación de Ajustes:", config_h_layout)
 
-        paths_group.setLayout(paths_layout)
-        self.layout.addWidget(paths_group)
+        paths_group.setLayout(paths_form)
+        rutas_layout.addWidget(paths_group)
+        rutas_layout.addStretch()
+        self.tabs.addTab(rutas_tab, "Rutas")
 
-        # UI Settings Group
+        # --- Tab: Interfaz ---
+        ui_tab = QWidget()
+        ui_layout_v = QVBoxLayout(ui_tab)
         ui_group = QGroupBox("Interfaz de Usuario")
-        ui_layout = QFormLayout()
+        ui_form = QFormLayout()
 
         self.auto_resize_cb = QCheckBox()
         self.auto_resize_cb.setChecked(self.config.get("ui.auto_resize", True))
-        ui_layout.addRow("Auto-ajustar columnas:", self.auto_resize_cb)
+        ui_form.addRow("Auto-ajustar columnas:", self.auto_resize_cb)
 
         self.show_const_logs_cb = QCheckBox()
         self.show_const_logs_cb.setChecked(self.config.get("ui.show_construction_logs", False))
-        ui_layout.addRow("Mostrar logs de construcción:", self.show_const_logs_cb)
+        ui_form.addRow("Mostrar logs de construcción:", self.show_const_logs_cb)
 
         self.show_sidebar_cb = QCheckBox()
         self.show_sidebar_cb.setChecked(self.config.get("ui.sidebar_visible", True))
-        ui_layout.addRow("Ver panel de años:", self.show_sidebar_cb)
+        ui_form.addRow("Ver panel de años:", self.show_sidebar_cb)
 
         self.show_console_cb = QCheckBox()
         self.show_console_cb.setChecked(self.config.get("ui.console_visible", True))
-        ui_layout.addRow("Ver consola SQL:", self.show_console_cb)
+        ui_form.addRow("Ver consola SQL:", self.show_console_cb)
 
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Fusion", "Windows", "Dark"])
         self.theme_combo.setCurrentText(self.config.get("ui.theme", "Fusion"))
-        ui_layout.addRow("Tema:", self.theme_combo)
+        ui_form.addRow("Tema:", self.theme_combo)
 
-        ui_group.setLayout(ui_layout)
-        self.layout.addWidget(ui_group)
+        ui_group.setLayout(ui_form)
+        ui_layout_v.addWidget(ui_group)
+        ui_layout_v.addStretch()
+        self.tabs.addTab(ui_tab, "Interfaz")
 
-        # Telegram Settings Group
-        tg_group = QGroupBox("Telegram")
-        tg_layout = QFormLayout()
+        # --- Tab: Telegram ---
+        tg_tab = QWidget()
+        tg_layout_v = QVBoxLayout(tg_tab)
+        tg_group = QGroupBox("Ajustes de Telegram")
+        tg_form = QFormLayout()
 
         self.api_id_edit = QLineEdit(str(self.config.get("telegram.api_id", "")))
-        tg_layout.addRow("API ID:", self.api_id_edit)
+        tg_form.addRow("API ID:", self.api_id_edit)
 
         self.api_hash_edit = QLineEdit(self.config.get("telegram.api_hash", ""))
-        tg_layout.addRow("API Hash:", self.api_hash_edit)
+        tg_form.addRow("API Hash:", self.api_hash_edit)
 
         help_label = QLabel('<a href="https://my.telegram.org/">¿Dónde consigo esto?</a>')
         help_label.setOpenExternalLinks(True)
-        tg_layout.addRow("", help_label)
+        tg_form.addRow("", help_label)
 
         self.tg_status_label = QLabel(self.tg_manager.get_last_status() if self.tg_manager else "No disponible")
         self._tg_connected = self.tg_manager.is_connected() if self.tg_manager else False
@@ -105,7 +118,7 @@ class SettingsDialog(QDialog):
         tg_conn_layout.addWidget(self.tg_status_label)
         tg_conn_layout.addStretch()
         tg_conn_layout.addWidget(self.btn_tg_connect)
-        tg_layout.addRow("Estado:", tg_conn_layout)
+        tg_form.addRow("Estado:", tg_conn_layout)
 
         self.chat_name_label = QLabel(self.config.get("telegram.chat_name", "Ninguno seleccionado"))
         self.btn_select_chat = QPushButton("Elegir Grupo/Canal")
@@ -115,51 +128,43 @@ class SettingsDialog(QDialog):
         tg_chat_layout.addWidget(self.chat_name_label)
         tg_chat_layout.addStretch()
         tg_chat_layout.addWidget(self.btn_select_chat)
-        tg_layout.addRow("Chat Destino:", tg_chat_layout)
+        tg_form.addRow("Chat Destino:", tg_chat_layout)
 
-        tg_group.setLayout(tg_layout)
-        self.layout.addWidget(tg_group)
+        tg_group.setLayout(tg_form)
+        tg_layout_v.addWidget(tg_group)
+        tg_layout_v.addStretch()
+        self.tabs.addTab(tg_tab, "Telegram")
 
-        # Network Whitelist Group
-        net_group = QGroupBox("Seguridad de Red")
-        net_layout = QFormLayout()
-
-        self.whitelist_enabled_cb = QCheckBox()
-        self.whitelist_enabled_cb.setChecked(self.config.get("security.whitelist_enabled", False))
-        net_layout.addRow("Modo lista blanca de redes:", self.whitelist_enabled_cb)
-
-        self.btn_manage_whitelist = QPushButton("Administrar lista blanca de redes")
-        self.btn_manage_whitelist.clicked.connect(self.manage_whitelist)
-        self.update_whitelist_tooltip()
-        net_layout.addRow(self.btn_manage_whitelist)
-
-        net_group.setLayout(net_layout)
-        self.layout.addWidget(net_group)
-
-        # API Server Group
-        api_group = QGroupBox("Servidor API")
-        api_layout = QFormLayout()
+        # --- Tab: Servidor API ---
+        api_tab = QWidget()
+        api_layout_v = QVBoxLayout(api_tab)
+        api_group = QGroupBox("Exposición de Recursos")
+        api_form = QFormLayout()
 
         self.api_enabled_cb = QCheckBox("Exponer materiales a la red local")
         self.api_enabled_cb.setChecked(self.config.get("api.enabled", False))
-        api_layout.addRow(self.api_enabled_cb)
+        api_form.addRow(self.api_enabled_cb)
 
         self.api_port_edit = QLineEdit(str(self.config.get("api.port", 9090)))
-        api_layout.addRow("Puerto API:", self.api_port_edit)
+        api_form.addRow("Puerto API:", self.api_port_edit)
 
-        api_group.setLayout(api_layout)
-        self.layout.addWidget(api_group)
+        api_group.setLayout(api_form)
+        api_layout_v.addWidget(api_group)
+        api_layout_v.addStretch()
+        self.tabs.addTab(api_tab, "Servidor API")
 
-        # Firebase Group
+        # --- Tab: Firebase ---
+        fb_tab = QWidget()
+        fb_layout_v = QVBoxLayout(fb_tab)
         fb_group = QGroupBox("Firebase Connector")
-        fb_layout = QFormLayout()
+        fb_form = QFormLayout()
 
         self.fb_url_edit = QLineEdit(self.config.get("firebase.db_url", ""))
         self.fb_url_edit.textChanged.connect(self.update_fb_btns_state)
-        fb_layout.addRow("URL de Base de Datos:", self.fb_url_edit)
+        fb_form.addRow("URL de Base de Datos:", self.fb_url_edit)
 
         self.fb_ref_edit = QLineEdit(self.config.get("firebase.db_ref_journals", ""))
-        fb_layout.addRow("Referencia Jornadas:", self.fb_ref_edit)
+        fb_form.addRow("Referencia Jornadas:", self.fb_ref_edit)
 
         self.fb_creds_label = QLabel()
         self.update_fb_creds_label(self.config.get("firebase.credentials_path", ""))
@@ -171,11 +176,32 @@ class SettingsDialog(QDialog):
         fb_creds_h_layout.addWidget(self.fb_creds_label)
         fb_creds_h_layout.addStretch()
         fb_creds_h_layout.addWidget(self.btn_browse_fb_creds)
-        fb_layout.addRow("Credenciales:", fb_creds_h_layout)
+        fb_form.addRow("Credenciales:", fb_creds_h_layout)
 
-        fb_group.setLayout(fb_layout)
-        self.layout.addWidget(fb_group)
-        self.update_fb_btns_state()
+        fb_group.setLayout(fb_form)
+        fb_layout_v.addWidget(fb_group)
+        fb_layout_v.addStretch()
+        self.tabs.addTab(fb_tab, "Firebase")
+
+        # --- Tab: Seguridad ---
+        sec_tab = QWidget()
+        sec_layout_v = QVBoxLayout(sec_tab)
+        net_group = QGroupBox("Seguridad de Red")
+        net_form = QFormLayout()
+
+        self.whitelist_enabled_cb = QCheckBox()
+        self.whitelist_enabled_cb.setChecked(self.config.get("security.whitelist_enabled", False))
+        net_form.addRow("Modo lista blanca de redes:", self.whitelist_enabled_cb)
+
+        self.btn_manage_whitelist = QPushButton("Administrar lista blanca de redes")
+        self.btn_manage_whitelist.clicked.connect(self.manage_whitelist)
+        self.update_whitelist_tooltip()
+        net_form.addRow(self.btn_manage_whitelist)
+
+        net_group.setLayout(net_form)
+        sec_layout_v.addWidget(net_group)
+        sec_layout_v.addStretch()
+        self.tabs.addTab(sec_tab, "Seguridad")
 
         # Advanced/Management Area
         mgmt_layout = QHBoxLayout()

@@ -26,7 +26,7 @@ class OfflineWarningBar(QWidget):
         self.warning_icon = QLabel()
         self.warning_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxWarning).pixmap(16, 16))
 
-        self.label = QLabel("El disco 'E:/' no está disponible. Los datos respaldados están en modo de solo lectura.")
+        self.label = QLabel("El disco 'E:/' no está disponible. Los datos respaldados están en modo de solo lectura. La exposición de materiales API no está operativa.")
         self.label.setStyleSheet("font-weight: bold; color: black;")
 
         self.content_layout.addWidget(self.warning_icon)
