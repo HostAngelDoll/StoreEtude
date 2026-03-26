@@ -75,10 +75,14 @@ class MainWindow(QMainWindow):
         self.warning_bar.setVisible(offline)
 
     def toggle_sql_consoles(self, visible):
-        for tab in self.all_tabs: tab.set_console_visible(visible)
+        for tab in self.all_tabs:
+            if hasattr(tab, 'set_console_visible'):
+                tab.set_console_visible(visible)
 
     def set_auto_resize_columns(self, enabled):
-        for tab in self.all_tabs: tab.set_auto_resize(enabled)
+        for tab in self.all_tabs:
+            if hasattr(tab, 'set_auto_resize'):
+                tab.set_auto_resize(enabled)
 
     def closeEvent(self, event):
         self.controller.shutdown()
