@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QTabWidget, QHBoxLayout, QTreeView, QDockWidget, QMessageBox)
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QIcon
 from datetime import datetime
 import os
@@ -73,6 +73,12 @@ class MainWindow(QMainWindow):
 
     def update_offline_mode(self, offline):
         self.warning_bar.setVisible(offline)
+
+    def toggle_sql_consoles(self, visible):
+        for tab in self.all_tabs: tab.set_console_visible(visible)
+
+    def set_auto_resize_columns(self, enabled):
+        for tab in self.all_tabs: tab.set_auto_resize(enabled)
 
     def closeEvent(self, event):
         self.controller.shutdown()
