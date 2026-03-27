@@ -148,7 +148,7 @@ class ReportMaterialsDialog(QDialog):
 
     def process_addition(self):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        from db_operations import DBOperations
+        from core.db_operations import DBOperations
         materials_list = []
         for r in range(self.model.rowCount()):
             dt = self.model.data(self.model.index(r, 0))

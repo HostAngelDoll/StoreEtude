@@ -16,7 +16,7 @@ from PyQt6.QtSql import (QSqlTableModel, QSqlRelationalTableModel, QSqlRelation,
 from PyQt6.QtWidgets import QStyledItemDelegate, QComboBox
 
 from dialogs.database_form import DatabaseForm
-from filter_widget import FilterMenu
+from ui.filter_widget import FilterMenu
 from core.app_state import AppMode
 from core.db_manager_utils import SQL_DIR
 

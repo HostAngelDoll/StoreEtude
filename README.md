@@ -40,7 +40,7 @@ Cada año tiene su propia base de datos dedicada para almacenar:
 * **`data_table.py`:** Contiene la clase `DataTableTab`, el motor principal para la visualización y edición de tablas, y `ColumnHeaderView` para la gestión de filtros y menús contextuales de columnas.
 * **`core/db_manager_utils.py`:** Se encarga de la inicialización de las bases de datos, la gestión de conexiones y la ejecución de scripts iniciales de SQL.
 * **`forms.py`:** Define los diálogos para la entrada de datos (añadir/editar registros) y selección de rangos de años.
-* **`filter_widget.py`:** Implementa el menú desplegable de filtrado y ordenación.
+* **`ui/filter_widget.py`:** Implementa el menú desplegable de filtrado y ordenación.
 * **`sql/`:** Directorio con los scripts de creación de tablas (`global.sql` y `yearly.sql`).
 
 ## 💻 Instalación y Ejecución

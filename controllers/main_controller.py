@@ -14,7 +14,7 @@ from core.api_server import APIServerThread
 from core.firebase_manager import FirebaseManager
 from telegram_manager import TelegramManager
 from sync_manager import SyncManager
-from db_operations import DBOperations
+from core.db_operations import DBOperations
 from resource_management import ResourceScanner
 from data_migration import DataMigrator
 
