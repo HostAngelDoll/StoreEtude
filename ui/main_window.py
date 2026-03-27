@@ -2,9 +2,10 @@ import os
 from datetime import datetime
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                              QTabWidget, QHBoxLayout, QTreeView,
-                             QDockWidget)
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QStandardItemModel, QStandardItem, QIcon
+                             QDockWidget, QMessageBox, QProgressDialog,
+                             QApplication)
+from PyQt6.QtCore import Qt, pyqtSignal, QByteArray
+from PyQt6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPalette, QColor
 
 from data_table import DataTableTab
 from ui.warning_bar import OfflineWarningBar
@@ -44,6 +45,65 @@ class MainWindow(QMainWindow):
 
         self._init_ui()
         self._init_menu()
+
+    def show_error(self, message, title="Error"):
+        QMessageBox.warning(self, title, message)
+
+    def show_info(self, message, title="Información"):
+        QMessageBox.information(self, title, message)
+
+    def ask_confirmation(self, message, title="Confirmación"):
+        reply = QMessageBox.question(self, title, message,
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        return reply == QMessageBox.StandardButton.Yes
+
+    def create_progress_dialog(self, message, title="Procesando...", cancelable=True):
+        progress = QProgressDialog(message, "Cancelar" if cancelable else None, 0, 100, self)
+        progress.setWindowTitle(title)
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        return progress
+
+    def apply_theme(self, theme_name):
+        if theme_name == "Dark":
+            QApplication.instance().setStyle("Fusion")
+            palette = QPalette()
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Window, QColor(53, 53, 53))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Base, QColor(25, 25, 25))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.AlternateBase, QColor(53, 53, 53))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.ToolTipBase, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.ToolTipText, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Text, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Button, QColor(53, 53, 53))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.ButtonText, Qt.GlobalColor.white)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.BrightText, Qt.GlobalColor.red)
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Link, QColor(42, 130, 218))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.Highlight, QColor(42, 130, 218))
+            palette.setColor(QPalette.ColorGroup.All, QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
+            QApplication.instance().setPalette(palette)
+        else:
+            QApplication.instance().setStyle(theme_name)
+            if QApplication.instance().style():
+                QApplication.instance().setPalette(QApplication.instance().style().standardPalette())
+
+    def restore_geometry_safe(self, geometry_base64, is_maximized):
+        if is_maximized:
+            self.showMaximized()
+            return
+
+        if geometry_base64:
+            try:
+                ba = QByteArray.fromBase64(geometry_base64.encode())
+                if not ba.isEmpty() and ba.size() >= 20:
+                    self.restoreGeometry(ba)
+            except Exception as e:
+                print(f"Error al restaurar geometría: {e}")
+
+    def get_geometry_base64(self):
+        geo = self.saveGeometry()
+        if geo and not geo.isEmpty():
+            return geo.toBase64().data().decode()
+        return None
 
     def _init_ui(self):
         central_widget = QWidget()
