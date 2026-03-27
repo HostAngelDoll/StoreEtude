@@ -80,7 +80,7 @@ class ColumnHeaderView(QHeaderView):
         table_tab = self.get_table_tab()
         if table_tab and table_tab.model:
             col_name = table_tab.model.headerData(logicalIndex, Qt.Orientation.Horizontal)
-            from config_manager import ConfigManager
+            from core.config_manager import ConfigManager
             config = ConfigManager()
             # Only save if not locked (to avoid overwrite during programmatic adjustment if any)
             # Actually, we should save manual changes
@@ -155,7 +155,7 @@ class ColumnHeaderView(QHeaderView):
         
         table_tab = self.get_table_tab()
         col_name = table_tab.model.headerData(logical_index, Qt.Orientation.Horizontal)
-        from config_manager import ConfigManager
+        from core.config_manager import ConfigManager
         config = ConfigManager()
         col_config = config.get_column_config(table_tab.table_name, col_name)
         is_locked = col_config.get("locked", False)
@@ -963,7 +963,7 @@ class DataTableTab(QWidget):
     def resize_to_contents(self):
         if not self.view: return
         header = self.view.horizontalHeader()
-        from config_manager import ConfigManager
+        from core.config_manager import ConfigManager
         config = ConfigManager()
         for i in range(self.model.columnCount()):
             col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
@@ -976,7 +976,7 @@ class DataTableTab(QWidget):
 
     def lock_all_columns(self):
         if not self.model: return
-        from config_manager import ConfigManager
+        from core.config_manager import ConfigManager
         config = ConfigManager()
         header = self.view.horizontalHeader()
         for i in range(self.model.columnCount()):
@@ -992,7 +992,7 @@ class DataTableTab(QWidget):
 
     def unlock_all_columns(self):
         if not self.model: return
-        from config_manager import ConfigManager
+        from core.config_manager import ConfigManager
         config = ConfigManager()
         header = self.view.horizontalHeader()
         for i in range(self.model.columnCount()):
@@ -1014,7 +1014,7 @@ class DataTableTab(QWidget):
             return
             
         header._is_applying_config = True
-        from config_manager import ConfigManager
+        from core.config_manager import ConfigManager
         config = ConfigManager()
         
         main_win = None

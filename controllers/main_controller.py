@@ -6,16 +6,16 @@ from PyQt6.QtGui import QPalette, QColor
 
 from core.db_manager_utils import (get_base_dir_path, get_global_db_path, get_yearly_db_path,
                                   get_offline_db_path, is_on_external_drive)
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 from core.db_connection_manager import DBConnectionManager
 from core.drive_monitor import DriveMonitor
 from core.app_state import AppState, AppMode
 from core.api_server import APIServerThread
 from core.firebase_manager import FirebaseManager
-from telegram_manager import TelegramManager
-from sync_manager import SyncManager
+from core.telegram_manager import TelegramManager
+from core.sync_manager import SyncManager
 from core.db_operations import DBOperations
-from resource_management import ResourceScanner
+from core.resource_management import ResourceScanner
 from data_migration import DataMigrator
 
 from dialogs import (YearRangeDialog, ReportMaterialsDialog,

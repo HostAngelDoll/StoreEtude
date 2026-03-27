@@ -6,7 +6,7 @@ from waitress import serve
 from PyQt6.QtCore import QThread, pyqtSignal
 from werkzeug.utils import secure_filename
 
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 from core.whitelist_manager import WhitelistManager
 from journals_manager.journal_logic import JournalManager
 from core.db_manager_utils import get_yearly_db_path, get_base_dir_path, get_global_db_path

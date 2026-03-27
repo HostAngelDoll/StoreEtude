@@ -2,7 +2,7 @@ import os
 import json
 import firebase_admin
 from firebase_admin import credentials, db
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 from journals_manager.journal_logic import JournalManager
 
 class FirebaseManager:

@@ -6,7 +6,7 @@ from PyQt6.QtCore import Qt, QDate, QEvent
 from PyQt6.QtGui import QIcon, QStandardItemModel, QStandardItem, QKeySequence
 import os
 from datetime import datetime
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 from dialogs.common_delegates import (SpinoffDelegate, SeasonDelegate, TypeResourceDelegate,
                                TitleMaterialDelegate, CatalogDelegate)
 from .journal_logic import JournalManager

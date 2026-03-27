@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QFormLayout, QLineEdit, QHBox
 from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt
 import os
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 from .chat_selection import ChatSelectionDialog
 from .column_management import ColumnManagementDialog
 from .whitelist_dialog import WhitelistDialog

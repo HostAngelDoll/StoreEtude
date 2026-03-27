@@ -5,7 +5,7 @@ import threading
 from PyQt6.QtCore import QObject, pyqtSignal, QThread, QCoreApplication
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 
 
 class TelegramLoopThread(QThread):

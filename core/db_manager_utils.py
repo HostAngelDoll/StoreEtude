@@ -4,7 +4,7 @@ import re
 import time
 from datetime import datetime
 from PyQt6.QtSql import QSqlQuery, QSqlDatabase
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 
 _config = ConfigManager()
 

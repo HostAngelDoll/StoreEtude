@@ -2,7 +2,7 @@ import os
 import json
 import uuid
 from datetime import datetime
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 
 class JournalManager:
     def __init__(self):
