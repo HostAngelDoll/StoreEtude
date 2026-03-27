@@ -6,10 +6,10 @@ from waitress import serve
 from PyQt6.QtCore import QThread, pyqtSignal
 from werkzeug.utils import secure_filename
 
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 from core.whitelist_manager import WhitelistManager
 from journals_manager.journal_logic import JournalManager
-from db_manager import get_yearly_db_path, BASE_DIR_PATH
+from core.db_manager_utils import get_yearly_db_path, get_base_dir_path, get_global_db_path
 
 class APIServerThread(QThread):
     def __init__(self):
@@ -43,7 +43,7 @@ class APIServerThread(QThread):
             db_path = get_yearly_db_path(year)
             if not os.path.exists(db_path):
                 # Fallback to offline DB if exists
-                from db_manager import get_offline_db_path
+                from core.db_manager_utils import get_offline_db_path
                 db_path = get_offline_db_path(db_path)
                 if not os.path.exists(db_path):
                     return jsonify({"error": "Year not found"}), 404
@@ -52,8 +52,8 @@ class APIServerThread(QThread):
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
 
-                from db_manager import GLOBAL_DB_PATH, get_offline_db_path
-                g_path = GLOBAL_DB_PATH
+                from core.db_manager_utils import get_offline_db_path
+                g_path = get_global_db_path()
                 if not os.path.exists(g_path):
                     g_path = get_offline_db_path(g_path)
 
@@ -93,7 +93,7 @@ class APIServerThread(QThread):
 
             db_path = get_yearly_db_path(year)
             if not os.path.exists(db_path):
-                from db_manager import get_offline_db_path
+                from core.db_manager_utils import get_offline_db_path
                 db_path = get_offline_db_path(db_path)
 
             if os.path.exists(db_path):
@@ -113,7 +113,7 @@ class APIServerThread(QThread):
 
             db_path = get_yearly_db_path(year)
             if not os.path.exists(db_path):
-                from db_manager import get_offline_db_path
+                from core.db_manager_utils import get_offline_db_path
                 db_path = get_offline_db_path(db_path)
                 if not os.path.exists(db_path):
                     return jsonify({"error": "Year not found"}), 404
@@ -121,8 +121,8 @@ class APIServerThread(QThread):
             try:
                 conn = sqlite3.connect(db_path)
                 cursor = conn.cursor()
-                from db_manager import GLOBAL_DB_PATH, get_offline_db_path
-                g_path = GLOBAL_DB_PATH
+                from core.db_manager_utils import get_offline_db_path
+                g_path = get_global_db_path()
                 if not os.path.exists(g_path):
                     g_path = get_offline_db_path(g_path)
 

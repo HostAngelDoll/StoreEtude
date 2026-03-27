@@ -4,19 +4,20 @@ import re
 import time
 from datetime import datetime
 from PyQt6.QtSql import QSqlQuery, QSqlDatabase
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 
 _config = ConfigManager()
 
-GLOBAL_DB_PATH = _config.get("global_db_path", "_global.db")
-BASE_DIR_PATH = _config.get("base_dir_path", r"E:\_Internal")
-SQL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql")
+def get_global_db_path():
+    return _config.get("global_db_path", "_global.db")
+
+def get_base_dir_path():
+    return _config.get("base_dir_path", r"E:\_Internal")
+
+SQL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sql")
 
 def refresh_config_paths():
-    global GLOBAL_DB_PATH, BASE_DIR_PATH
     _config.load()
-    GLOBAL_DB_PATH = _config.get("global_db_path", "_global.db")
-    BASE_DIR_PATH = _config.get("base_dir_path", r"E:\_Internal")
 
 def is_on_external_drive(path):
     # Check if path starts with E:\
@@ -28,7 +29,7 @@ def get_offline_db_path(original_path):
     offline_dir = config.offline_db_dir
     os.makedirs(offline_dir, exist_ok=True)
 
-    if original_path == GLOBAL_DB_PATH:
+    if original_path == get_global_db_path():
         return os.path.join(offline_dir, "offline_global.db")
 
     # For yearly dbs, original_path looks like:
@@ -51,7 +52,7 @@ def get_db_connection(db_path):
 def get_yearly_db_path(year):
     px = int(year) - 2003
     px_str = f"{px:02d}"
-    year_dir = os.path.join(BASE_DIR_PATH, str(year), f"{px_str}. identity_propeties")
+    year_dir = os.path.join(get_base_dir_path(), str(year), f"{px_str}. identity_propeties")
     return os.path.join(year_dir, "le_etude_base.db")
 
 def run_sql_file(conn, filename):
@@ -64,24 +65,26 @@ def run_sql_file(conn, filename):
     conn.executescript(sql)
 
 def init_global_db(reset=False):
-    if reset and os.path.exists(GLOBAL_DB_PATH):
-        os.remove(GLOBAL_DB_PATH)
+    global_db_path = get_global_db_path()
+    if reset and os.path.exists(global_db_path):
+        os.remove(global_db_path)
         
-    conn = get_db_connection(GLOBAL_DB_PATH)
+    conn = get_db_connection(global_db_path)
     run_sql_file(conn, "global.sql")
     conn.commit()
     conn.close()
 
 def init_yearly_dbs(reset=False):
-    # Only if E:\ exists or the BASE_DIR_PATH exists
-    drive = os.path.splitdrive(BASE_DIR_PATH)[0]
+    # Only if E:\ exists or the base_dir exists
+    base_dir = get_base_dir_path()
+    drive = os.path.splitdrive(base_dir)[0]
     if drive and not os.path.exists(drive + "\\"):
          # Skip if drive doesn't exist
          return
     
-    if not os.path.exists(BASE_DIR_PATH):
+    if not os.path.exists(base_dir):
         try:
-            os.makedirs(BASE_DIR_PATH)
+            os.makedirs(base_dir)
         except Exception as e:
             print(f"Error creating base dir: {e}")
             return
@@ -182,7 +185,7 @@ def get_opener_model_info_sqlite(dt_range, model_writer):
         if not re.match(r'\d{4}-\d{2}-\d{2}', date_str):
             return None, None
 
-        conn = sqlite3.connect(GLOBAL_DB_PATH)
+        conn = sqlite3.connect(get_global_db_path())
         cursor = conn.cursor()
 
         writer_type = str(model_writer).lower()

@@ -3,8 +3,8 @@ import re
 import sqlite3
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal
-from db_manager import (BASE_DIR_PATH, get_yearly_db_path, GLOBAL_DB_PATH,
-                        calculate_lapsed, get_opener_model_info_sqlite)
+from core.db_manager_utils import (get_base_dir_path, get_yearly_db_path, get_global_db_path,
+                                     calculate_lapsed, get_opener_model_info_sqlite)
 
 class DBOperations(QObject):
     progress_changed = pyqtSignal(int, int, str)
@@ -117,17 +117,18 @@ class DBOperations(QObject):
             self.error_occurred.emit(f"Error recalculating models: {e}")
 
     def scan_master_folders(self):
-        if not os.path.exists(BASE_DIR_PATH):
-            self.error_occurred.emit(f"Ruta base {BASE_DIR_PATH} no encontrada.")
+        base_dir = get_base_dir_path()
+        if not os.path.exists(base_dir):
+            self.error_occurred.emit(f"Ruta base {base_dir} no encontrada.")
             return
 
         try:
-            conn = sqlite3.connect(GLOBAL_DB_PATH)
+            conn = sqlite3.connect(get_global_db_path())
             cursor = conn.cursor()
             updated_count = 0
 
             for year in range(2004, datetime.now().year + 1):
-                year_path = os.path.join(BASE_DIR_PATH, str(year))
+                year_path = os.path.join(base_dir, str(year))
                 if os.path.exists(year_path):
                     found_folder = None
                     try:
@@ -149,7 +150,7 @@ class DBOperations(QObject):
 
     def process_materials_report(self, materials_list):
         try:
-            conn_global = sqlite3.connect(GLOBAL_DB_PATH)
+            conn_global = sqlite3.connect(get_global_db_path())
             cursor_global = conn_global.cursor()
             
             records_to_add = []

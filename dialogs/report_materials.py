@@ -4,7 +4,7 @@ from PyQt6.QtGui import QIcon, QStandardItemModel, QStandardItem, QKeySequence
 from PyQt6.QtCore import Qt, QEvent
 from datetime import datetime
 import os
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 from .common_delegates import (SpinoffDelegate, SeasonDelegate, TypeResourceDelegate,
                                TitleMaterialDelegate, CatalogDelegate)
 
@@ -148,7 +148,7 @@ class ReportMaterialsDialog(QDialog):
 
     def process_addition(self):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
-        from db_operations import DBOperations
+        from core.db_operations import DBOperations
         materials_list = []
         for r in range(self.model.rowCount()):
             dt = self.model.data(self.model.index(r, 0))

@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (QDialog, QVBoxLayout, QLabel, QTreeView, QDialogBut
 from PyQt6.QtGui import QIcon, QStandardItemModel, QStandardItem
 from PyQt6.QtCore import Qt
 import os
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 
 class ColumnManagementDialog(QDialog):
     def __init__(self, parent=None):

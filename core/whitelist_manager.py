@@ -5,15 +5,7 @@ import subprocess
 import json
 import socket
 
-# Add parent directory to path to import ConfigManager
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-try:
-    from config_manager import ConfigManager
-except ImportError:
-    class ConfigManager:
-        def __init__(self):
-            self.config_dir = "."
+from core.config_manager import ConfigManager
 
 class WhitelistManager:
     def __init__(self):

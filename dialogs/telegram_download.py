@@ -5,7 +5,7 @@ from PyQt6.QtGui import QIcon
 from PyQt6.QtCore import Qt
 from datetime import datetime
 import os
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 
 class TelegramDownloadDialog(QDialog):
     def __init__(self, parent=None, tg_manager=None):

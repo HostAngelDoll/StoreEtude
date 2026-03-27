@@ -4,7 +4,7 @@ import json
 import time
 import hashlib
 from PyQt6.QtCore import QThread, pyqtSignal, QObject
-from config_manager import ConfigManager
+from core.config_manager import ConfigManager
 
 class BackupWorker(QThread):
     progress = pyqtSignal(int, int, str)  # current, total, label
