@@ -5,7 +5,7 @@ import subprocess
 import time
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal, QCoreApplication
-from core.db_manager_utils import BASE_DIR_PATH, get_yearly_db_path, GLOBAL_DB_PATH
+from core.db_manager_utils import get_base_dir_path, get_yearly_db_path, get_global_db_path
 
 class ResourceScanner(QObject):
     progress_changed = pyqtSignal(int, int, str)
@@ -39,10 +39,11 @@ class ResourceScanner(QObject):
         return filename.lower().endswith(allowed_exts) if allowed_exts else True
 
     def scan_and_link_resources(self, years, overwrite=True):
-        if not os.path.exists(BASE_DIR_PATH):
+        base_dir = get_base_dir_path()
+        if not os.path.exists(base_dir):
             return
 
-        conn_global = sqlite3.connect(GLOBAL_DB_PATH)
+        conn_global = sqlite3.connect(get_global_db_path())
         cursor_global = conn_global.cursor()
 
         type_ids = {}
@@ -70,7 +71,7 @@ class ResourceScanner(QObject):
 
             if not seasons_info: continue
 
-            master_path = os.path.join(BASE_DIR_PATH, str(year), seasons_info[0]['path_master'] or "")
+            master_path = os.path.join(base_dir, str(year), seasons_info[0]['path_master'] or "")
             if not os.path.exists(master_path): continue
 
             db_year_path = get_yearly_db_path(year)
@@ -232,9 +233,10 @@ class ResourceScanner(QObject):
                                (f"{folder_name}/{filename}", duration, dt_str, title))
 
     def scan_new_soundtracks_lyrics(self, years):
-        if not os.path.exists(BASE_DIR_PATH): return
+        base_dir = get_base_dir_path()
+        if not os.path.exists(base_dir): return
 
-        conn_global = sqlite3.connect(GLOBAL_DB_PATH)
+        conn_global = sqlite3.connect(get_global_db_path())
         cursor_global = conn_global.cursor()
 
         type_ids = {}
@@ -256,7 +258,7 @@ class ResourceScanner(QObject):
             if not row: continue
             season_name, path_master = row
 
-            master_path = os.path.join(BASE_DIR_PATH, str(year), path_master or "")
+            master_path = os.path.join(base_dir, str(year), path_master or "")
             if not os.path.exists(master_path): continue
 
             sd_folder_name = ly_folder_name = None

@@ -3,7 +3,7 @@ import openpyxl
 import sqlite3
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal
-from core.db_manager_utils import BASE_DIR_PATH, get_yearly_db_path, GLOBAL_DB_PATH
+from core.db_manager_utils import get_base_dir_path, get_yearly_db_path, get_global_db_path
 
 class DataMigrator(QObject):
     progress_changed = pyqtSignal(int, int, str)  # current, total, label
@@ -24,8 +24,9 @@ class DataMigrator(QObject):
         self._confirmation_result = result
 
     def migrate_resources(self):
-        if not os.path.exists(BASE_DIR_PATH):
-            self.error_occurred.emit(f"Ruta base {BASE_DIR_PATH} no encontrada.")
+        base_dir = get_base_dir_path()
+        if not os.path.exists(base_dir):
+            self.error_occurred.emit(f"Ruta base {base_dir} no encontrada.")
             return
 
         years = list(range(2004, datetime.now().year + 1))
@@ -35,7 +36,7 @@ class DataMigrator(QObject):
 
         # Use sqlite3 standard lib in background thread
         try:
-            conn_global = sqlite3.connect(GLOBAL_DB_PATH)
+            conn_global = sqlite3.connect(get_global_db_path())
             cursor_global = conn_global.cursor()
 
             cursor_global.execute("SELECT idx, type_resource FROM T_Type_Resources")
@@ -61,7 +62,7 @@ class DataMigrator(QObject):
 
             px = year - 2003
             px_str = f"{px:02d}"
-            excel_path = os.path.join(BASE_DIR_PATH, str(year), f"{px_str}. identity_propeties", f"{px_str}. le_etude.overwrite.xlsx")
+            excel_path = os.path.join(base_dir, str(year), f"{px_str}. identity_propeties", f"{px_str}. le_etude.overwrite.xlsx")
 
             if not os.path.exists(excel_path):
                 continue
@@ -132,8 +133,9 @@ class DataMigrator(QObject):
 
     def migrate_registry(self):
         from core.db_manager_utils import calculate_lapsed, get_opener_model_info_sqlite
-        if not os.path.exists(BASE_DIR_PATH):
-            self.error_occurred.emit(f"Ruta base {BASE_DIR_PATH} no encontrada.")
+        base_dir = get_base_dir_path()
+        if not os.path.exists(base_dir):
+            self.error_occurred.emit(f"Ruta base {base_dir} no encontrada.")
             return
 
         years = list(range(2004, datetime.now().year + 1))
@@ -146,7 +148,7 @@ class DataMigrator(QObject):
 
             px = year - 2003
             px_str = f"{px:02d}"
-            excel_path = os.path.join(BASE_DIR_PATH, str(year), f"{px_str}. identity_propeties", f"{px_str}. le_etude.overwrite.xlsx")
+            excel_path = os.path.join(base_dir, str(year), f"{px_str}. identity_propeties", f"{px_str}. le_etude.overwrite.xlsx")
             if not os.path.exists(excel_path): continue
 
             try:

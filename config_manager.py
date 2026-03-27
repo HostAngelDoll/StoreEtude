@@ -179,6 +179,33 @@ class ConfigManager:
                 except:
                     pass
 
+    def move_global_db_file(self, new_path):
+        old_path = self.get("global_db_path")
+        if not old_path or new_path == old_path:
+            return True
+
+        try:
+            # Ensure target directory exists
+            os.makedirs(os.path.dirname(new_path), exist_ok=True)
+
+            # Move DB file if exists
+            if os.path.exists(old_path):
+                shutil.move(old_path, new_path)
+
+            # Also move the offline global db if it exists
+            old_offline = os.path.join(self.offline_db_dir, "offline_global.db")
+            if os.path.exists(old_offline):
+                # Since offline dbs are in a flat dir, we don't move them to a new path relative to new_path,
+                # but we keep them where they are (in the config dir).
+                # Actually, if the global db is moved, we just keep the offline snapshot as is.
+                pass
+
+            self.set("global_db_path", new_path, save=True)
+            return True
+        except Exception as e:
+            print(f"Error moving global db file: {e}")
+            return False
+
     def move_config_file(self, new_path):
         if new_path == self.config_path:
             return True

@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import QApplication, QMessageBox, QProgressDialog, QDialog
 from PyQt6.QtCore import Qt, QByteArray, QThread, QTimer, QObject
 from PyQt6.QtGui import QPalette, QColor
 
-from core.db_manager_utils import (BASE_DIR_PATH, GLOBAL_DB_PATH, get_yearly_db_path,
+from core.db_manager_utils import (get_base_dir_path, get_global_db_path, get_yearly_db_path,
                                   get_offline_db_path, is_on_external_drive)
 from config_manager import ConfigManager
 from core.db_connection_manager import DBConnectionManager
@@ -66,7 +66,7 @@ class MainController(QObject):
         self.win.resize_requested.connect(self.resize_active_tab)
 
     def _init_drive_monitor(self):
-        drive_letter = os.path.splitdrive(BASE_DIR_PATH)[0].replace(":", "")
+        drive_letter = os.path.splitdrive(get_base_dir_path())[0].replace(":", "")
         self.drive_monitor = DriveMonitor(drive_letter or "E")
         self.drive_monitor.drive_status_changed.connect(self.handle_drive_status_change)
 
@@ -86,7 +86,7 @@ class MainController(QObject):
         self.update_api_server_status()
 
     def init_db_connections(self):
-        g_path = GLOBAL_DB_PATH
+        g_path = get_global_db_path()
         is_ro = False
         if self.state.mode == AppMode.OFFLINE and is_on_external_drive(g_path):
             g_path = get_offline_db_path(g_path)
@@ -110,7 +110,7 @@ class MainController(QObject):
 
         self.db_manager.open_connection("year_db", y_path, readonly=is_ro)
 
-        g_path = GLOBAL_DB_PATH
+        g_path = get_global_db_path()
         if self.state.mode == AppMode.OFFLINE and is_on_external_drive(g_path):
             g_path = get_offline_db_path(g_path)
 
@@ -158,8 +158,9 @@ class MainController(QObject):
 
     def run_startup_sync(self, callback=None):
         tasks = []
-        if is_on_external_drive(GLOBAL_DB_PATH):
-            tasks.append((GLOBAL_DB_PATH, get_offline_db_path(GLOBAL_DB_PATH), "Sincronizando Global DB..."))
+        global_db_path = get_global_db_path()
+        if is_on_external_drive(global_db_path):
+            tasks.append((global_db_path, get_offline_db_path(global_db_path), "Sincronizando Global DB..."))
 
         for year in range(2004, datetime.now().year + 1):
             y_path = get_yearly_db_path(year)
@@ -207,8 +208,16 @@ class MainController(QObject):
         dialog.exec()
 
     def on_settings_requested(self):
+        old_global_path = self.config.get("global_db_path")
         dialog = SettingsDialog(self.win, self.tg_manager)
         if dialog.exec() == QDialog.DialogCode.Accepted:
+            new_global_path = self.config.get("global_db_path")
+
+            if new_global_path != old_global_path:
+                self.db_manager.close_all(self.win.all_tabs)
+                if not self.config.move_global_db_file(new_global_path):
+                    QMessageBox.warning(self.win, "Error", "No se pudo mover la base de datos global. Se intentará reconectar de todas formas.")
+
             self.config.load()
             from core.db_manager_utils import refresh_config_paths
             refresh_config_paths()
