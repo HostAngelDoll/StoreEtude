@@ -14,7 +14,8 @@ class TelegramService:
         if hasattr(self._manager, 'reset_client'):
             self._manager.reset_client()
 
-    def fetch_videos(self):
-        # Current implementation of TelegramManager handles the logic.
-        # This can be expanded later.
-        pass
+    def fetch_videos(self, chat_id, limit=5):
+        """
+        Solicita al manager que busque videos en el chat especificado.
+        """
+        self._manager.fetch_videos(chat_id, limit)

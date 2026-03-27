@@ -9,10 +9,10 @@ from core.app_state import AppState, AppMode
 class DBSessionManager(QObject):
     session_changed = pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, state: AppState, db_manager: DBConnectionManager = None):
         super().__init__()
-        self.db_manager = DBConnectionManager()
-        self.state = AppState()
+        self.db_manager = db_manager or DBConnectionManager()
+        self.state = state
         self.current_year = None
 
     def init_global_connection(self):

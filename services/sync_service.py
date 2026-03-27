@@ -6,10 +6,10 @@ from core.firebase_manager import FirebaseManager
 from core.sync_manager import SyncManager
 
 class SyncService:
-    def __init__(self):
-        self.config = ConfigManager()
-        self.fb_manager = FirebaseManager()
-        self.sync_manager = SyncManager()
+    def __init__(self, config: ConfigManager, fb_manager: FirebaseManager = None, sync_manager: SyncManager = None):
+        self.config = config
+        self.fb_manager = fb_manager or FirebaseManager()
+        self.sync_manager = sync_manager or SyncManager()
 
     def get_startup_sync_tasks(self):
         tasks = []

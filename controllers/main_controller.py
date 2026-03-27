@@ -27,8 +27,8 @@ class MainController(QObject):
         self.config = ConfigManager()
         self.state = AppState()
 
-        self.db_session = DBSessionManager()
-        self.sync_service = SyncService()
+        self.db_session = DBSessionManager(self.state, self.db_manager if hasattr(self, 'db_manager') else None)
+        self.sync_service = SyncService(self.config)
         self.scanner_service = ScannerService()
         self.migration_service = MigrationService()
         self.db_service = DBService()
