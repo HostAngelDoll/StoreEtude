@@ -3,8 +3,8 @@ import re
 import sqlite3
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal
-from db_manager import (BASE_DIR_PATH, get_yearly_db_path, GLOBAL_DB_PATH,
-                        calculate_lapsed, get_opener_model_info_sqlite)
+from core.db_manager_utils import (BASE_DIR_PATH, get_yearly_db_path, GLOBAL_DB_PATH,
+                                     calculate_lapsed, get_opener_model_info_sqlite)
 
 class DBOperations(QObject):
     progress_changed = pyqtSignal(int, int, str)

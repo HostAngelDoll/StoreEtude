@@ -3,7 +3,7 @@ import openpyxl
 import sqlite3
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal
-from db_manager import BASE_DIR_PATH, get_yearly_db_path, GLOBAL_DB_PATH
+from core.db_manager_utils import BASE_DIR_PATH, get_yearly_db_path, GLOBAL_DB_PATH
 
 class DataMigrator(QObject):
     progress_changed = pyqtSignal(int, int, str)  # current, total, label
@@ -131,7 +131,7 @@ class DataMigrator(QObject):
         self.finished.emit(total_migrated)
 
     def migrate_registry(self):
-        from db_manager import calculate_lapsed, get_opener_model_info_sqlite
+        from core.db_manager_utils import calculate_lapsed, get_opener_model_info_sqlite
         if not os.path.exists(BASE_DIR_PATH):
             self.error_occurred.emit(f"Ruta base {BASE_DIR_PATH} no encontrada.")
             return

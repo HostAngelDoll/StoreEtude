@@ -10,7 +10,7 @@ _config = ConfigManager()
 
 GLOBAL_DB_PATH = _config.get("global_db_path", "_global.db")
 BASE_DIR_PATH = _config.get("base_dir_path", r"E:\_Internal")
-SQL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sql")
+SQL_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sql")
 
 def refresh_config_paths():
     global GLOBAL_DB_PATH, BASE_DIR_PATH

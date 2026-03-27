@@ -5,7 +5,7 @@ import subprocess
 import time
 from datetime import datetime
 from PyQt6.QtCore import QObject, pyqtSignal, QCoreApplication
-from db_manager import BASE_DIR_PATH, get_yearly_db_path, GLOBAL_DB_PATH
+from core.db_manager_utils import BASE_DIR_PATH, get_yearly_db_path, GLOBAL_DB_PATH
 
 class ResourceScanner(QObject):
     progress_changed = pyqtSignal(int, int, str)

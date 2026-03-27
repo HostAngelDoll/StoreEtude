@@ -34,9 +34,11 @@ Cada año tiene su propia base de datos dedicada para almacenar:
 - [x] **Cálculos Automáticos:** Cálculo en tiempo real de la duración de reproducciones (lapsos) y detección de modelos de apertura basados en fechas.
 
 ## 📂 Estructura del Código (Módulos)
-* **`main.pyw`:** Punto de entrada de la aplicación. Gestiona la ventana principal, la barra de menús, la lógica de escaneo de archivos y los procesos de migración masiva.
+* **`main.pyw`:** Punto de entrada de la aplicación. Instancia la interfaz y el controlador.
+* **`ui/main_window.py`:** Contiene la clase `MainWindow`, encargada exclusivamente de la interfaz de usuario, menús y disposición de widgets.
+* **`controllers/main_controller.py`:** Clase `MainController` que maneja la lógica de negocio, hilos de ejecución, conexiones a bases de datos y coordinación entre componentes.
 * **`data_table.py`:** Contiene la clase `DataTableTab`, el motor principal para la visualización y edición de tablas, y `ColumnHeaderView` para la gestión de filtros y menús contextuales de columnas.
-* **`db_manager.py`:** Se encarga de la inicialización de las bases de datos, la gestión de conexiones y la ejecución de scripts iniciales de SQL.
+* **`core/db_manager_utils.py`:** Se encarga de la inicialización de las bases de datos, la gestión de conexiones y la ejecución de scripts iniciales de SQL.
 * **`forms.py`:** Define los diálogos para la entrada de datos (añadir/editar registros) y selección de rangos de años.
 * **`filter_widget.py`:** Implementa el menú desplegable de filtrado y ordenación.
 * **`sql/`:** Directorio con los scripts de creación de tablas (`global.sql` y `yearly.sql`).

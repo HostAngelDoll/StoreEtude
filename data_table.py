@@ -18,7 +18,7 @@ from PyQt6.QtWidgets import QStyledItemDelegate, QComboBox
 from dialogs.database_form import DatabaseForm
 from filter_widget import FilterMenu
 from core.app_state import AppMode
-from db_manager import SQL_DIR
+from core.db_manager_utils import SQL_DIR
 
 class ComboDelegate(QStyledItemDelegate):
     def __init__(self, table_name, model_column, filter_str=None, parent=None):
@@ -604,7 +604,7 @@ class DataTableTab(QWidget):
         self.model.submitAll()
         
         # Mandatory Backup Logic if column has data
-        from db_manager import get_yearly_db_path
+        from core.db_manager_utils import get_yearly_db_path
         
         has_data = False
         db_paths_to_check = []
@@ -700,7 +700,7 @@ class DataTableTab(QWidget):
             self.log(f"Error exportando CSV {csv_path}: {e}", is_error=True)
 
     def propagate_schema_change(self, sql_command, success_msg_prefix):
-        from db_manager import init_yearly_dbs, get_yearly_db_path
+        from core.db_manager_utils import init_yearly_dbs, get_yearly_db_path
         
         # Ensure all databases exist
         init_yearly_dbs()
