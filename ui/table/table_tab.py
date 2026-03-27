@@ -6,218 +6,20 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QTableView,
                              QHeaderView, QPushButton, QLabel, QPlainTextEdit,
                              QSplitter, QMessageBox, QFileDialog, QInputDialog,
                              QApplication, QAbstractItemView, QMenu, QProgressDialog,
-                             QStyle, QStyleOptionButton, QStyleOptionHeader,
                              QMainWindow)
-from PyQt6.QtCore import Qt, QRect, QPoint
-from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor, QPainter, QPalette
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QTextCharFormat, QColor, QTextCursor
 from datetime import datetime
 from PyQt6.QtSql import (QSqlTableModel, QSqlRelationalTableModel, QSqlRelation, 
                          QSqlRelationalDelegate, QSqlQuery, QSqlDatabase)
-from PyQt6.QtWidgets import QStyledItemDelegate, QComboBox
 
 from dialogs.database_form import DatabaseForm
 from ui.filter_widget import FilterMenu
 from core.app_state import AppMode
 from core.db_manager_utils import SQL_DIR
 
-class ComboDelegate(QStyledItemDelegate):
-    def __init__(self, table_name, model_column, filter_str=None, parent=None):
-        super().__init__(parent)
-        self.table_name = table_name
-        self.model_column = model_column
-        self.filter_str = filter_str
-
-    def createEditor(self, parent, option, index):
-        editor = QComboBox(parent)
-        
-        # Get DB from model
-        model = index.model()
-        db = model.database()
-        
-        # Create a temporary model for the combo
-        rel_model = QSqlTableModel(editor, db)
-        rel_model.setTable(self.table_name)
-        if self.filter_str:
-            rel_model.setFilter(self.filter_str)
-        rel_model.select()
-        while rel_model.canFetchMore():
-            rel_model.fetchMore()
-        
-        editor.addItem("", None) # Index 0
-        col_idx = rel_model.fieldIndex(self.model_column)
-        for r in range(rel_model.rowCount()):
-            val = rel_model.data(rel_model.index(r, col_idx))
-            editor.addItem(str(val), val)
-            
-        return editor
-
-    def setEditorData(self, editor, index):
-        value = index.data(Qt.ItemDataRole.EditRole)
-        idx = editor.findData(value)
-        if idx >= 0:
-            editor.setCurrentIndex(idx)
-        else:
-            editor.setCurrentIndex(0)
-
-    def setModelData(self, editor, model, index):
-        val = editor.currentData()
-        model.setData(index, val if val != "" else None, Qt.ItemDataRole.EditRole)
-
-class ColumnHeaderView(QHeaderView):
-    def __init__(self, orientation, parent=None):
-        super().__init__(orientation, parent)
-        self.setSectionsClickable(True)
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.customContextMenuRequested.connect(self.show_context_menu)
-        self.filter_rects = {}
-        self.sectionResized.connect(self.on_section_resized)
-        self._is_applying_config = False
-
-    def on_section_resized(self, logicalIndex, oldSize, newSize):
-        if self._is_applying_config:
-            return
-        
-        table_tab = self.get_table_tab()
-        if table_tab and table_tab.model:
-            col_name = table_tab.model.headerData(logicalIndex, Qt.Orientation.Horizontal)
-            from core.config_manager import ConfigManager
-            config = ConfigManager()
-            # Only save if not locked (to avoid overwrite during programmatic adjustment if any)
-            # Actually, we should save manual changes
-            config.set_column_config(table_tab.table_name, col_name, width=newSize)
-
-    def get_table_tab(self):
-        # Traverse up to find DataTableTab
-        p = self.parent()
-        while p:
-            if hasattr(p, 'table_name') and hasattr(p, 'model'):
-                return p
-            p = p.parent()
-        return None
-
-    def sectionSizeFromContents(self, logicalIndex):
-        size = super().sectionSizeFromContents(logicalIndex)
-        size.setWidth(size.width() + 20) # Space for filter button
-        return size
-
-    def sectionCountChanged(self, oldCount, newCount):
-        self.filter_rects.clear()
-        super().sectionCountChanged(oldCount, newCount)
-
-    def paintSection(self, painter, rect, logicalIndex):
-        painter.save()
-        
-        # Draw background only
-        opt = QStyleOptionHeader()
-        opt.rect = rect
-        opt.section = logicalIndex
-        opt.state = QStyle.StateFlag.State_Enabled
-        self.style().drawControl(QStyle.ControlElement.CE_HeaderSection, opt, painter, self)
-        
-        # Draw text in restricted area
-        text = self.model().headerData(logicalIndex, self.orientation(), Qt.ItemDataRole.DisplayRole)
-        margin = 4
-        btn_size = 14
-        text_rect = QRect(rect.left() + margin, rect.top(), rect.width() - btn_size - margin * 3, rect.height())
-        self.style().drawItemText(painter, text_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, self.palette(), True, str(text))
-        
-        # Draw filter button
-        btn_rect = QRect(rect.right() - btn_size - margin, rect.center().y() - btn_size//2, btn_size, btn_size)
-        self.filter_rects[logicalIndex] = btn_rect
-        
-        # Determine button colors based on light/dark mode (heuristic)
-        is_dark = self.palette().window().color().lightness() < 128
-        bg_color = QColor(255, 255, 255, 60) if is_dark else QColor(0, 0, 0, 40)
-        text_color = Qt.GlobalColor.white if is_dark else Qt.GlobalColor.black
-
-        painter.setBrush(bg_color)
-        painter.setPen(Qt.GlobalColor.transparent)
-        painter.drawRoundedRect(btn_rect, 2, 2)
-        
-        painter.setPen(text_color)
-        painter.drawText(btn_rect, Qt.AlignmentFlag.AlignCenter, "▼")
-        
-        painter.restore()
-
-    def mousePressEvent(self, event):
-        logical_index = self.logicalIndexAt(event.pos())
-        if logical_index in self.filter_rects and self.filter_rects[logical_index].contains(event.pos()):
-            # Filter button clicked
-            table_tab = self.parent().parent().parent()
-            table_tab.show_filter_menu(logical_index, self.mapToGlobal(event.pos()))
-            return
-        super().mousePressEvent(event)
-
-    def show_context_menu(self, pos):
-        logical_index = self.logicalIndexAt(pos)
-        if logical_index < 0:
-            return
-        
-        table_tab = self.get_table_tab()
-        col_name = table_tab.model.headerData(logical_index, Qt.Orientation.Horizontal)
-        from core.config_manager import ConfigManager
-        config = ConfigManager()
-        col_config = config.get_column_config(table_tab.table_name, col_name)
-        is_locked = col_config.get("locked", False)
-
-        menu = QMenu(self)
-        add_left = menu.addAction("Agregar columna (izquierda)")
-        add_right = menu.addAction("Agregar columna (derecha)")
-        rename_col = menu.addAction("Renombrar columna")
-        delete_col = menu.addAction("Eliminar columna")
-        menu.addSeparator()
-        
-        lock_action = menu.addAction("Desbloquear Ancho" if is_locked else "Bloquear Ancho")
-        
-        menu.addSeparator()
-        copy_col_name = menu.addAction("Copiar nombre de esta columna")
-        copy_col_data = menu.addAction("Copiar datos de esta columna")
-        
-        # Mode check
-        main_win = None
-        for widget in QApplication.topLevelWidgets():
-            if isinstance(widget, QMainWindow):
-                main_win = widget
-                break
-
-        is_year_tab = getattr(table_tab, 'db_conn_name', None) == "year_db"
-        is_offline = (main_win and getattr(main_win, 'state', None) and main_win.state.mode == AppMode.OFFLINE)
-
-        # JournalForm and other non-DB forms should not allow schema changes
-        is_db_tab = isinstance(table_tab, DataTableTab)
-        if not is_db_tab:
-            add_left.setVisible(False)
-            add_right.setVisible(False)
-            rename_col.setVisible(False)
-            delete_col.setVisible(False)
-
-        if is_year_tab and is_offline:
-            add_left.setEnabled(False)
-            add_right.setEnabled(False)
-            rename_col.setEnabled(False)
-            delete_col.setEnabled(False)
-
-        action = menu.exec(self.mapToGlobal(pos))
-        if not action:
-            return
-        
-        if action == lock_action:
-            config.set_column_config(table_tab.table_name, col_name, locked=not is_locked)
-            table_tab.apply_column_configs()
-            return
-
-        if action == add_left:
-            table_tab.add_column(logical_index)
-        elif action == add_right:
-            table_tab.add_column(logical_index + 1)
-        elif action == rename_col:
-            table_tab.rename_column(logical_index)
-        elif action == delete_col:
-            table_tab.delete_column(logical_index)
-        elif action == copy_col_name:
-            table_tab.copy_column_name(logical_index)
-        elif action == copy_col_data:
-            table_tab.copy_column_data(logical_index)
+from ui.table.delegates import ComboDelegate
+from ui.table.header import ColumnHeaderView
 
 class DataTableTab(QWidget):
     def __init__(self, db_conn_name, table_name, parent=None):
@@ -229,8 +31,6 @@ class DataTableTab(QWidget):
         self.view = QTableView()
         self.model = None
         self.init_ui_components()
-        # We NO LONGER call update_database here to avoid opening DB
-        # before the main application is ready.
 
     def init_ui_components(self):
         # CRUD Buttons
@@ -304,7 +104,6 @@ class DataTableTab(QWidget):
         db = self.model.database()
         query = QSqlQuery(db)
         
-        # Get the underlying field name from the DB schema to avoid model aliases/display names
         actual_field_name = db.record(self.table_name).fieldName(col_index)
         
         success = False
@@ -329,7 +128,6 @@ class DataTableTab(QWidget):
                     all_values.append(query.value(0))
                 success = True
         
-        # Fallback to model data if query failed or returned no values
         if not success or not all_values:
             unique_vals = set()
             for r in range(self.model.rowCount()):
@@ -349,7 +147,6 @@ class DataTableTab(QWidget):
         filter_parts = []
         for col, values in self.active_filters.items():
             field_name = self.model.record().fieldName(col)
-            # Escape single quotes and handle NULLs
             escaped_vals = []
             has_null = False
             for v in values:
@@ -359,7 +156,7 @@ class DataTableTab(QWidget):
                     escaped_vals.append(f"'{str(v).replace('\'', '\'\'')}'")
             
             if not escaped_vals and not has_null:
-                filter_parts.append("1=0") # No values selected
+                filter_parts.append("1=0")
             else:
                 conditions = []
                 if escaped_vals:
@@ -384,20 +181,15 @@ class DataTableTab(QWidget):
         try:
             with open(file_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                
-                # Headers
                 headers = []
                 for i in range(self.model.columnCount()):
                     headers.append(self.model.headerData(i, Qt.Orientation.Horizontal))
                 writer.writerow(headers)
-                
-                # Data
                 for r in range(self.model.rowCount()):
                     row_data = []
                     for c in range(self.model.columnCount()):
                         row_data.append(self.model.data(self.model.index(r, c)))
                     writer.writerow(row_data)
-                    
             QMessageBox.information(self, "Exportación", "Tabla exportada con éxito.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo exportar: {e}")
@@ -418,21 +210,17 @@ class DataTableTab(QWidget):
             with open(file_path, 'r', encoding='utf-8') as f:
                 reader = csv.reader(f)
                 headers = next(reader)
-                
-                # Validate headers
                 model_headers = [self.model.headerData(i, Qt.Orientation.Horizontal) for i in range(self.model.columnCount())]
                 if headers != model_headers:
                     QMessageBox.critical(self, "Error", f"Las columnas no coinciden.\nCSV: {headers}\nTabla: {model_headers}")
                     return
                 
-                # Clear table efficiently
                 db = QSqlDatabase.database(self.db_conn_name)
                 query = QSqlQuery(db)
                 if not query.exec(f"DELETE FROM {self.table_name}"):
                     QMessageBox.critical(self, "Error", f"No se pudo limpiar la tabla: {query.lastError().text()}")
                     return
                 
-                # Insert data
                 for row_data in reader:
                     record = self.model.record()
                     for i, val in enumerate(row_data):
@@ -445,7 +233,6 @@ class DataTableTab(QWidget):
                 else:
                     QMessageBox.critical(self, "Error", f"Error al guardar los datos: {self.model.lastError().text()}")
                     self.model.select()
-                    
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo importar: {e}")
 
@@ -454,7 +241,6 @@ class DataTableTab(QWidget):
         for r in range(self.model.rowCount()):
             val = self.model.data(self.model.index(r, index))
             data_list.append(str(val) if val is not None else "")
-        
         clipboard = QApplication.clipboard()
         clipboard.setText("\n".join(data_list))
         self.log(f"Datos de columna '{self.model.headerData(index, Qt.Orientation.Horizontal)}' copiados al portapapeles.")
@@ -474,7 +260,6 @@ class DataTableTab(QWidget):
         else:
             fmt.setForeground(QColor("white"))
             prefix = "[INFO] "
-        
         self.log_viewer.setCurrentCharFormat(fmt)
         self.log_viewer.insertPlainText(f"{prefix}{message}\n")
         self.log_viewer.moveCursor(QTextCursor.MoveOperation.End)
@@ -503,28 +288,19 @@ class DataTableTab(QWidget):
 
     def run_sql_script(self):
         full_script = self.sql_console.toPlainText().strip()
-        if not full_script:
-            return
-        
+        if not full_script: return
         db = QSqlDatabase.database(self.db_conn_name)
-        # Split by semicolon but ignore inside quotes
         statements = re.split(r';(?=(?:[^\'"]*[\'"][^\'"]*[\'"])*[^\'"]*$)', full_script)
-        
         success_count = 0
         error_occurred = False
-        
         for statement in statements:
             stmt = statement.strip()
-            if not stmt or stmt.upper() == "COMMIT":
-                continue
-            
+            if not stmt or stmt.upper() == "COMMIT": continue
             query = QSqlQuery(db)
             if query.exec(stmt):
                 success_count += 1
-                # Detect CREATE TABLE or DROP TABLE
                 create_match = re.search(r"CREATE\s+TABLE\s+(\w+)", stmt, re.IGNORECASE)
                 drop_match = re.search(r"DROP\s+TABLE\s+(\w+)", stmt, re.IGNORECASE)
-                
                 if create_match:
                     new_table = create_match.group(1)
                     self.table_name = new_table
@@ -540,57 +316,41 @@ class DataTableTab(QWidget):
                 self.log(f"Error en sentencia: {stmt[:30]}... -> {err_msg}", is_error=True)
                 error_occurred = True
                 break
-        
         if success_count > 0:
             self.log(f"Ejecutadas con éxito {success_count} sentencias.")
             self.model.select()
-            if not error_occurred:
-                self.sql_console.clear()
+            if not error_occurred: self.sql_console.clear()
 
     def add_column(self, position):
         col_name, ok = QInputDialog.getText(self, "Nueva Columna", "Nombre de la columna:")
-        if not ok or not col_name:
-            return
-        
+        if not ok or not col_name: return
         self.model.submitAll()
         self.update_sql_file_add_column(col_name)
-        
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         sql = f'ALTER TABLE "{self.table_name}" ADD COLUMN "{col_name}" TEXT'
-        
         current_cols_count = self.model.record().count()
         if query.exec(sql):
             self.log(f"Columna '{col_name}' añadida en base de datos actual.")
-            if self.db_conn_name == "year_db":
-                self.propagate_schema_change(sql, f"Columna '{col_name}' añadida")
-            
+            if self.db_conn_name == "year_db": self.propagate_schema_change(sql, f"Columna '{col_name}' añadida")
             self.model.select()
             if position < current_cols_count:
-                QMessageBox.information(self, "Columna Añadida", 
-                    "Nota: SQLite solo permite añadir columnas al final.")
+                QMessageBox.information(self, "Columna Añadida", "Nota: SQLite solo permite añadir columnas al final.")
         else:
             self.log(f"Error añadiendo columna: {query.lastError().text()}", is_error=True)
 
     def rename_column(self, index):
         old_name = self.model.record().fieldName(index)
         new_name, ok = QInputDialog.getText(self, "Renombrar Columna", f"Nuevo nombre para '{old_name}':", text=old_name)
-        if not ok or not new_name or new_name == old_name:
-            return
-        
+        if not ok or not new_name or new_name == old_name: return
         self.model.submitAll()
         self.update_sql_file_rename_column(old_name, new_name)
-        
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         sql = f'ALTER TABLE "{self.table_name}" RENAME COLUMN "{old_name}" TO "{new_name}"'
-        
         if query.exec(sql):
             self.log(f"Columna '{old_name}' renombrada a '{new_name}' en base de datos actual.")
-            if self.db_conn_name == "year_db":
-                # For rename, we need custom logic to check existence, but we can pass the SQL
-                self.propagate_schema_change(sql, f"Columna renombrada a '{new_name}'")
-                
+            if self.db_conn_name == "year_db": self.propagate_schema_change(sql, f"Columna renombrada a '{new_name}'")
             self.model.setTable(self.table_name)
             self.model.select()
         else:
@@ -598,72 +358,46 @@ class DataTableTab(QWidget):
 
     def delete_column(self, index):
         col_name = self.model.record().fieldName(index)
-        if QMessageBox.question(self, "Confirmar", f"¿Seguro que quieres eliminar la columna '{col_name}'?") != QMessageBox.StandardButton.Yes:
-            return
-        
+        if QMessageBox.question(self, "Confirmar", f"¿Seguro que quieres eliminar la columna '{col_name}'?") != QMessageBox.StandardButton.Yes: return
         self.model.submitAll()
-        
-        # Mandatory Backup Logic if column has data
         from core.db_manager_utils import get_yearly_db_path
-        
         has_data = False
         db_paths_to_check = []
         if self.db_conn_name == "year_db":
             for y in range(2004, datetime.now().year + 1):
                 p = get_yearly_db_path(y)
-                if os.path.exists(p):
-                    db_paths_to_check.append((y, p))
-        else:
-            db_paths_to_check.append((None, QSqlDatabase.database(self.db_conn_name).databaseName()))
-
-        # Check for data
+                if os.path.exists(p): db_paths_to_check.append((y, p))
+        else: db_paths_to_check.append((None, QSqlDatabase.database(self.db_conn_name).databaseName()))
         for _, p in db_paths_to_check:
             if self.column_has_data(p, self.table_name, col_name):
                 has_data = True
                 break
-        
         if has_data:
-            ret = QMessageBox.warning(self, "Columna con Datos", 
-                f"La columna '{col_name}' contiene datos. Se realizará una exportación a CSV de seguridad antes de borrar.\n¿Deseas continuar?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            if ret == QMessageBox.StandardButton.No:
-                return
-            
-            # Perform export
+            ret = QMessageBox.warning(self, "Columna con Datos", f"La columna '{col_name}' contiene datos. Se realizará una exportación a CSV de seguridad antes de borrar.\n¿Deseas continuar?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+            if ret == QMessageBox.StandardButton.No: return
             backup_dir = "backups"
-            if not os.path.exists(backup_dir):
-                os.makedirs(backup_dir)
-            
+            if not os.path.exists(backup_dir): os.makedirs(backup_dir)
             progress = QProgressDialog("Exportando backups...", "Cancelar", 0, len(db_paths_to_check), self)
             progress.setWindowModality(Qt.WindowModality.WindowModal)
             progress.show()
-            
             for i, (year, p) in enumerate(db_paths_to_check):
                 progress.setValue(i)
                 label = f"Backup año {year}..." if year else "Backup base de datos..."
                 progress.setLabelText(label)
                 QApplication.processEvents()
                 if progress.wasCanceled(): break
-                
                 suffix = f"_{year}" if year else ""
                 csv_path = os.path.join(backup_dir, f"{self.table_name}{suffix}_pre_delete_{col_name}.csv")
                 self.export_table_to_csv_static(p, self.table_name, csv_path)
-            
             progress.setValue(len(db_paths_to_check))
             QMessageBox.information(self, "Backup Completado", f"Se han guardado copias de seguridad en la carpeta '{backup_dir}'.")
-
-        # Proceed with deletion
         self.update_sql_file_drop_column(col_name)
-        
         db = QSqlDatabase.database(self.db_conn_name)
         query = QSqlQuery(db)
         sql = f'ALTER TABLE "{self.table_name}" DROP COLUMN "{col_name}"'
-        
         if query.exec(sql):
             self.log(f"Columna '{col_name}' eliminada en base de datos actual.")
-            if self.db_conn_name == "year_db":
-                self.propagate_schema_change(sql, f"Columna '{col_name}' eliminada")
-                
+            if self.db_conn_name == "year_db": self.propagate_schema_change(sql, f"Columna '{col_name}' eliminada")
             self.model.setTable(self.table_name)
             self.model.select()
         else:
@@ -677,139 +411,84 @@ class DataTableTab(QWidget):
             if col_name not in cols:
                 conn.close()
                 return False
-                
             cursor = conn.execute(f'SELECT 1 FROM "{table_name}" WHERE "{col_name}" IS NOT NULL AND "{col_name}" != "" LIMIT 1')
             row = cursor.fetchone()
             conn.close()
             return row is not None
-        except:
-            return False
+        except: return False
 
     def export_table_to_csv_static(self, db_path, table_name, csv_path):
         try:
             conn = sqlite3.connect(db_path)
             cursor = conn.execute(f'SELECT * FROM "{table_name}"')
             columns = [description[0] for description in cursor.description]
-            
             with open(csv_path, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
                 writer.writerow(columns)
                 writer.writerows(cursor.fetchall())
             conn.close()
-        except Exception as e:
-            self.log(f"Error exportando CSV {csv_path}: {e}", is_error=True)
+        except Exception as e: self.log(f"Error exportando CSV {csv_path}: {e}", is_error=True)
 
     def propagate_schema_change(self, sql_command, success_msg_prefix):
         from core.db_manager_utils import init_yearly_dbs, get_yearly_db_path
-        
-        # Ensure all databases exist
         init_yearly_dbs()
-        
         current_db_path = os.path.abspath(QSqlDatabase.database(self.db_conn_name).databaseName())
         years = list(range(2004, datetime.now().year + 1))
-        
         progress = QProgressDialog("Propagando cambios de esquema...", "Cancelar", 0, len(years), self)
-        progress.setWindowModality(Qt.WindowModality.WindowModal)
-        progress.setMinimumDuration(0)
-        progress.show()
-        
+        progress.setWindowModality(Qt.WindowModality.WindowModal); progress.setMinimumDuration(0); progress.show()
         for i, year in enumerate(years):
-            progress.setValue(i)
-            progress.setLabelText(f"Procesando año {year}...")
-            QApplication.processEvents()
-            
+            progress.setValue(i); progress.setLabelText(f"Procesando año {year}..."); QApplication.processEvents()
             if progress.wasCanceled():
                 self.log("Propagación cancelada por el usuario.", is_error=True)
                 break
-                
             db_path = os.path.abspath(get_yearly_db_path(year))
-            if db_path == current_db_path:
-                continue
-                
+            if db_path == current_db_path: continue
             if os.path.exists(db_path):
                 try:
                     conn = sqlite3.connect(db_path)
-                    # Check if table exists
                     cursor = conn.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{self.table_name}'")
                     if cursor.fetchone():
-                        # Additional safety for renames: check if column exists
                         if "RENAME COLUMN" in sql_command.upper():
-                            # Command format: ALTER TABLE "table" RENAME COLUMN "old" TO "new"
                             parts = sql_command.split('"')
                             if len(parts) >= 6:
-                                old_col = parts[3]
-                                new_col = parts[5]
+                                old_col = parts[3]; new_col = parts[5]
                                 info = conn.execute(f"PRAGMA table_info({self.table_name})").fetchall()
                                 cols = [r[1] for r in info]
-                                # If old column doesn't exist or new one already exists, skip
                                 if old_col not in cols or new_col in cols:
-                                    conn.close()
-                                    continue
-                        
-                        conn.execute(sql_command)
-                        conn.commit()
+                                    conn.close(); continue
+                        conn.execute(sql_command); conn.commit()
                         self.log(f"{success_msg_prefix} en base de datos del año {year}.")
                     conn.close()
-                except Exception as e:
-                    self.log(f"Error en año {year}: {e}", is_error=True)
-        
+                except Exception as e: self.log(f"Error en año {year}: {e}", is_error=True)
         progress.setValue(len(years))
 
     def update_database(self, db_conn_name):
-        # Access application settings via main window
         main_win = None
         for widget in QApplication.topLevelWidgets():
-            if isinstance(widget, QMainWindow):
-                main_win = widget
-                break
-
-        show_logs = False
-        if main_win and hasattr(main_win, 'show_construction_logs'):
-            show_logs = main_win.show_construction_logs.isChecked()
+            if isinstance(widget, QMainWindow): main_win = widget; break
+        show_logs = main_win.show_construction_logs.isChecked() if main_win and hasattr(main_win, 'show_construction_logs') else False
 
         def const_log(msg):
             if show_logs: self.log(f"[UI_RECONST] {msg}")
 
         const_log(f"--- Iniciando Reconstrucción Total: {self.table_name} ---")
-
-        self.active_filters = {}
-        self.db_conn_name = db_conn_name
+        self.active_filters = {}; self.db_conn_name = db_conn_name
         db = QSqlDatabase.database(db_conn_name)
-        
         if not db.isOpen():
             const_log("ERROR: La base de datos no está abierta.")
-            # Set a dummy model to avoid crashes if it's referenced
             if hasattr(self, 'model') and self.model:
-                self.model.deleteLater()
-                self.model = None
+                self.model.deleteLater(); self.model = None
             return
 
-        # Disable updates during swap to prevent artifacts
         self.main_splitter.setUpdatesEnabled(False)
-
-        # Retrieve auto-resize state from QMainWindow
-        auto_resize = True
-        if main_win and hasattr(main_win, 'auto_resize_action'):
-            auto_resize = main_win.auto_resize_action.isChecked()
-
-        # Is DB ReadOnly?
         is_year_tab = db_conn_name == "year_db"
         is_offline = (main_win and getattr(main_win, 'state', None) and main_win.state.mode == AppMode.OFFLINE)
         is_readonly = "mode=ro" in db.databaseName().lower() or (is_year_tab and is_offline)
-
-        self.btn_add.setEnabled(not is_readonly)
-        self.btn_edit.setEnabled(not is_readonly)
-        self.btn_delete.setEnabled(not is_readonly)
+        self.btn_add.setEnabled(not is_readonly); self.btn_edit.setEnabled(not is_readonly); self.btn_delete.setEnabled(not is_readonly)
         self.btn_run_sql.setEnabled(not (is_year_tab and is_offline))
 
         try:
-            # 1. Clean up old model (keep view for now to avoid layout collapse)
-            if hasattr(self, 'model') and self.model:
-                self.model.deleteLater()
-                self.model = None
-                const_log("Modelo anterior liberado.")
-
-            # 2. Create new model
+            if hasattr(self, 'model') and self.model: self.model.deleteLater(); self.model = None
             const_log(f"Creando nuevo modelo para {self.table_name}...")
             if self.table_name == "T_Resources" and db_conn_name == "year_db":
                 new_model = QSqlRelationalTableModel(self, db)
@@ -818,18 +497,14 @@ class DataTableTab(QWidget):
                 new_model.setRelation(2, QSqlRelation("T_Seasons", "precure_season_name", "precure_season_name"))
                 const_log("Relaciones SQL configuradas para T_Resources.")
             else:
-                new_model = QSqlTableModel(self, db)
-                new_model.setTable(self.table_name)
+                new_model = QSqlTableModel(self, db); new_model.setTable(self.table_name)
             
             new_model.setEditStrategy(QSqlTableModel.EditStrategy.OnManualSubmit)
             new_model.setFilter("")
-
             const_log("Ejecutando model.select()...")
-            if not new_model.select():
-                self.log(f"Error SQL: {new_model.lastError().text()}", is_error=True)
+            if not new_model.select(): self.log(f"Error SQL: {new_model.lastError().text()}", is_error=True)
             const_log(f"Carga completada. Filas: {new_model.rowCount()} | Columnas: {new_model.columnCount()}")
 
-            # 3. Create new View
             const_log("Instanciando nueva QTableView...")
             new_view = QTableView()
             new_view.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -837,54 +512,34 @@ class DataTableTab(QWidget):
             new_view.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked | QAbstractItemView.EditTrigger.EditKeyPressed)
             new_view.setModel(new_model)
 
-            # 4. Create and Setup Header
             const_log("Inicializando ColumnHeaderView...")
             new_header = ColumnHeaderView(Qt.Orientation.Horizontal, new_view)
             new_view.setHorizontalHeader(new_header)
-            
-            # Temporarily set to interactive to allow resizing
             new_header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
 
             if isinstance(new_model, QSqlRelationalTableModel):
                 new_view.setItemDelegate(QSqlRelationalDelegate(new_view))
-                const_log("Delegate relacional asignado.")
             
             if self.table_name == "T_Registry" and db_conn_name == "year_db":
-                # Apply custom delegates for specific columns
-                # 1: title_material, 3: type_repeat, 4: type_listen, 5: model_writer
                 new_view.setItemDelegateForColumn(1, ComboDelegate("T_Resources", "title_material", parent=new_view))
                 new_view.setItemDelegateForColumn(3, ComboDelegate("T_Type_Catalog_Reg", "type", "category='repeat'", parent=new_view))
                 new_view.setItemDelegateForColumn(4, ComboDelegate("T_Type_Catalog_Reg", "type", "category='listen'", parent=new_view))
                 new_view.setItemDelegateForColumn(5, ComboDelegate("T_Type_Catalog_Reg", "type", "category='write'", parent=new_view))
                 const_log("Delegados personalizados asignados a T_Registry.")
 
-            # 5. Swap in layout
             const_log("Actualizando Splitter...")
             old_view = self.view if hasattr(self, 'view') else None
             self.main_splitter.replaceWidget(0, new_view)
-
-            self.view = new_view
-            self.model = new_model
-
-            # Apply saved widths and locks
+            self.view = new_view; self.model = new_model
             self.apply_column_configs()
-
-            if old_view:
-                old_view.deleteLater()
-                const_log("Vista antigua eliminada.")
-
+            if old_view: old_view.deleteLater()
             const_log("Reconstrucción finalizada con éxito.")
-
-        except Exception as e:
-            self.log(f"Falla crítica en reconstrucción: {e}", is_error=True)
+        except Exception as e: self.log(f"Falla crítica en reconstrucción: {e}", is_error=True)
         finally:
-            self.main_splitter.setUpdatesEnabled(True)
-            self.view.show()
-            self.view.viewport().update()
-            QApplication.processEvents()
+            self.main_splitter.setUpdatesEnabled(True); self.view.show()
+            self.view.viewport().update(); QApplication.processEvents()
 
-    def set_console_visible(self, visible):
-        self.console_area.setVisible(visible)
+    def set_console_visible(self, visible): self.console_area.setVisible(visible)
 
     def get_sql_filepath(self):
         filename = "global.sql" if self.db_conn_name == "global_db" else "yearly.sql"
@@ -893,72 +548,40 @@ class DataTableTab(QWidget):
     def update_sql_file_add_column(self, col_name):
         path = self.get_sql_filepath()
         if not os.path.exists(path): return
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-        
-        # Simple regex to find the CREATE TABLE block and add the column before );
+        with open(path, "r", encoding="utf-8") as f: content = f.read()
         pattern = rf'(CREATE TABLE {self.table_name}\s*\([^;]*)\);'
         replacement = r'\1,    ' + col_name + ' TEXT\n);'
         new_content = re.sub(pattern, replacement, content, flags=re.IGNORECASE | re.DOTALL)
-        
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(new_content)
+        with open(path, "w", encoding="utf-8") as f: f.write(new_content)
 
     def update_sql_file_rename_column(self, old_name, new_name):
         path = self.get_sql_filepath()
         if not os.path.exists(path): return
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-        
-        # Regex to find the table block and then replace the column name within it
+        with open(path, "r", encoding="utf-8") as f: content = f.read()
         table_pattern = rf'(CREATE TABLE {self.table_name}\s*\()(.*?)(\);)'
-        
         def replace_col(match):
-            prefix = match.group(1)
-            body = match.group(2)
-            suffix = match.group(3)
-            # Match word with optional quotes
+            prefix = match.group(1); body = match.group(2); suffix = match.group(3)
             new_body = re.sub(rf'\b"{old_name}"\b|\b{old_name}\b', new_name, body)
             return prefix + new_body + suffix
-
         new_content = re.sub(table_pattern, replace_col, content, flags=re.IGNORECASE | re.DOTALL)
-        
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(new_content)
+        with open(path, "w", encoding="utf-8") as f: f.write(new_content)
 
     def update_sql_file_drop_column(self, col_name):
         path = self.get_sql_filepath()
         if not os.path.exists(path): return
-        with open(path, "r", encoding="utf-8") as f:
-            content = f.read()
-
+        with open(path, "r", encoding="utf-8") as f: content = f.read()
         table_pattern = rf'(CREATE TABLE {self.table_name}\s*\()(.*?)(\);)'
-        
         def replace_col(match):
-            prefix = match.group(1)
-            body = match.group(2)
-            suffix = match.group(3)
-            # Remove line with column name and handle trailing/leading commas
-            lines = body.split('\n')
-            new_lines = []
-            for line in lines:
-                if not re.search(rf'\b"{col_name}"\b|\b{col_name}\b', line):
-                    new_lines.append(line)
-            
-            # Re-clean commas
+            prefix = match.group(1); body = match.group(2); suffix = match.group(3)
+            lines = body.split('\n'); new_lines = [line for line in lines if not re.search(rf'\b"{col_name}"\b|\b{col_name}\b', line)]
             body_text = '\n'.join(new_lines)
-            body_text = re.sub(r',\s*\n\s*\)', '\n)', body_text) # remove comma before closing paren
-            body_text = re.sub(r'\(\s*,', '(', body_text) # remove comma after opening paren
-            
+            body_text = re.sub(r',\s*\n\s*\)', '\n)', body_text)
+            body_text = re.sub(r'\(\s*,', '(', body_text)
             return prefix + body_text + suffix
-
         new_content = re.sub(table_pattern, replace_col, content, flags=re.IGNORECASE | re.DOTALL)
-        
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(new_content)
+        with open(path, "w", encoding="utf-8") as f: f.write(new_content)
 
-    def set_auto_resize(self, enabled):
-        self.apply_column_configs()
+    def set_auto_resize(self, enabled): self.apply_column_configs()
 
     def resize_to_contents(self):
         if not self.view: return
@@ -968,7 +591,6 @@ class DataTableTab(QWidget):
         for i in range(self.model.columnCount()):
             col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
             col_config = config.get_column_config(self.table_name, col_name)
-            # Only auto-resize if not locked
             if not col_config.get("locked", False):
                 self.view.resizeColumnToContents(i)
                 config.set_column_config(self.table_name, col_name, width=header.sectionSize(i), save=False)
@@ -981,14 +603,10 @@ class DataTableTab(QWidget):
         header = self.view.horizontalHeader()
         for i in range(self.model.columnCount()):
             col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
-            # Only lock if not already locked
             col_config = config.get_column_config(self.table_name, col_name)
             if not col_config.get("locked", False):
-                config.set_column_config(self.table_name, col_name, 
-                                         width=header.sectionSize(i), 
-                                         locked=True, save=False)
-        config.save()
-        self.apply_column_configs()
+                config.set_column_config(self.table_name, col_name, width=header.sectionSize(i), locked=True, save=False)
+        config.save(); self.apply_column_configs()
 
     def unlock_all_columns(self):
         if not self.model: return
@@ -999,51 +617,24 @@ class DataTableTab(QWidget):
             col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
             col_config = config.get_column_config(self.table_name, col_name)
             if col_config.get("locked", False):
-                config.set_column_config(self.table_name, col_name, 
-                                         width=header.sectionSize(i), 
-                                         locked=False, save=False)
-        config.save()
-        self.apply_column_configs()
+                config.set_column_config(self.table_name, col_name, width=header.sectionSize(i), locked=False, save=False)
+        config.save(); self.apply_column_configs()
 
     def apply_column_configs(self):
-        if not self.model:
-            return
-            
+        if not self.model: return
         header = self.view.horizontalHeader()
-        if not isinstance(header, ColumnHeaderView):
-            return
-            
+        if not isinstance(header, ColumnHeaderView): return
         header._is_applying_config = True
         from core.config_manager import ConfigManager
         config = ConfigManager()
-        
         main_win = None
         for widget in QApplication.topLevelWidgets():
-            if isinstance(widget, QMainWindow):
-                main_win = widget
-                break
-        
-        auto_resize_global = True
-        if main_win and hasattr(main_win, 'auto_resize_action'):
-            auto_resize_global = main_win.auto_resize_action.isChecked()
-
+            if isinstance(widget, QMainWindow): main_win = widget; break
+        auto_resize_global = main_win.auto_resize_action.isChecked() if main_win and hasattr(main_win, 'auto_resize_action') else True
         for i in range(self.model.columnCount()):
             col_name = self.model.headerData(i, Qt.Orientation.Horizontal)
             col_config = config.get_column_config(self.table_name, col_name)
-            
             width = col_config.get("width")
-            locked = col_config.get("locked", False)
-            
-            # Requirement: Manual mouse resizing must ALWAYS be allowed.
-            # Fixed and Stretch modes block manual resizing, so we use Interactive.
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Interactive)
-
-            if width:
-                header.resizeSection(i, width)
-
-        if auto_resize_global:
-            header.setStretchLastSection(True)
-        else:
-            header.setStretchLastSection(False)
-        
-        header._is_applying_config = False
+            if width: header.resizeSection(i, width)
+        header.setStretchLastSection(auto_resize_global); header._is_applying_config = False

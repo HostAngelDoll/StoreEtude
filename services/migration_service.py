@@ -1,4 +1,4 @@
-from data_migration import DataMigrator as LegacyDataMigrator
+from core.data_migration import DataMigrator as LegacyDataMigrator
 
 class MigrationService:
     def __init__(self):

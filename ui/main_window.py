@@ -7,7 +7,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import Qt, pyqtSignal, QByteArray
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPalette, QColor
 
-from data_table import DataTableTab
+from ui.table.table_tab import DataTableTab
 from ui.warning_bar import OfflineWarningBar
 
 class MainWindow(QMainWindow):
