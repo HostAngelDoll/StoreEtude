@@ -28,6 +28,7 @@ class MainWindow(QMainWindow):
     auto_resize_toggled = pyqtSignal(bool)
     console_toggled = pyqtSignal(bool)
     settings_requested = pyqtSignal()
+    open_config_folder_requested = pyqtSignal()
     save_requested = pyqtSignal()
     export_requested = pyqtSignal()
     import_requested = pyqtSignal()

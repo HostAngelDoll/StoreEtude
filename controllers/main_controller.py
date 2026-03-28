@@ -60,6 +60,7 @@ class MainController(QObject):
         self.win.auto_resize_toggled.connect(self.win.set_auto_resize_columns)
         self.win.console_toggled.connect(self.win.toggle_sql_consoles)
         self.win.settings_requested.connect(self.on_settings_requested)
+        self.win.open_config_folder_requested.connect(self.on_open_config_folder_requested)
         self.win.save_requested.connect(self.save_settings)
         self.win.export_requested.connect(self.export_active_tab)
         self.win.import_requested.connect(self.import_active_tab)
@@ -159,6 +160,13 @@ class MainController(QObject):
         self.sync_firebase_journals()
         dialog = JournalAdminDialog(self.win)
         dialog.exec()
+
+    def on_open_config_folder_requested(self):
+        config_dir = os.path.dirname(self.config.config_path)
+        if os.path.exists(config_dir):
+            os.startfile(config_dir)
+        else:
+            self.win.show_error(f"La carpeta de configuración no existe: {config_dir}")
 
     def on_settings_requested(self):
         old_global_path = self.config.get("global_db_path")
