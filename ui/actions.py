@@ -22,6 +22,9 @@ class ActionsManager:
         self.config_action = QAction("Configuración", self.win)
         self.config_action.triggered.connect(self.win.settings_requested.emit)
 
+        self.open_config_folder_action = QAction("Abrir carpeta de configuración", self.win)
+        self.open_config_folder_action.triggered.connect(self.win.open_config_folder_requested.emit)
+
         self.exit_action = QAction("Salir", self.win)
         self.exit_action.triggered.connect(self.win.close)
 
@@ -97,6 +100,7 @@ class ActionsManager:
         file_menu.addAction(self.import_action)
         file_menu.addSeparator()
         file_menu.addAction(self.config_action)
+        file_menu.addAction(self.open_config_folder_action)
         file_menu.addSeparator()
         file_menu.addAction(self.exit_action)
 

@@ -37,6 +37,43 @@ Precure Media Manager is a comprehensive desktop application designed for the ma
 *   **Internal REST API:** Flask-powered server (Waitress) for programmatic resource queries and database access.
 *   **Security:** Network-based whitelisting (SSID/BSSID/Gateway) to control API and Firebase access.
 
+### 📝 Journal System (Viewing Agenda)
+The application manages "Journals" for viewing schedules, synchronized via Firebase. A typical journal entry follows this structure:
+
+```json
+{
+    "nombre": "Jornada de nuevos episodios",
+    "fecha_esperada": "2026-03-30",
+    "estado": "guardado",
+    "materiales": [
+        {
+            "datetime_range_utc_06": "",
+            "is_spinoff": "No",
+            "season": "Meitantei Pretty Cure!",
+            "type_resource": "Episodio",
+            "title_material": "07. ¡Oh, no! ¿La escuela es un laberinto",
+            "type_repeat": "",
+            "type_listen": "",
+            "model_writer": "locally"
+        },
+        {
+            "datetime_range_utc_06": "",
+            "is_spinoff": "No",
+            "season": "Meitantei Pretty Cure!",
+            "type_resource": "Episodio",
+            "title_material": "08. ¡Una linda sonrisa en Pretty Holic!",
+            "type_repeat": "",
+            "type_listen": "",
+            "model_writer": "locally"
+        }
+    ],
+    "id": "bf5a9bc2-cfb0-44e3-be8e-3434811163a0",
+    "created_at": "2026-03-27T19:21:33.021340",
+    "vertion": "1",
+    "updated_at": "2026-03-27T19:21:33.021340"
+}
+```
+
 ### 🛡️ Reliability
 *   **Hybrid Offline Mode:** Seamless hot-swapping between external drive (Online) and local SQLite snapshots (Offline).
 *   **Drive Monitoring:** Real-time tracking of hardware connectivity and storage space.
@@ -159,6 +196,43 @@ Sistema integral de gestión de recursos multimedia para la franquicia Precure. 
 *   **Sincronización Firebase:** Sincronización bidireccional de "Jornadas" (Agendas de visualización).
 *   **API REST Interna:** Servidor Flask (Waitress) para consultas programáticas y acceso a datos.
 *   **Seguridad:** Lista blanca de redes (SSID/BSSID) para control de acceso a servicios externos.
+
+### 📝 Sistema de Jornadas (Agenda de Visualización)
+La aplicación gestiona "Jornadas" para programar visualizaciones, sincronizadas a través de Firebase. Una entrada típica de jornada sigue esta estructura:
+
+```json
+{
+    "nombre": "Jornada de nuevos episodios",
+    "fecha_esperada": "2026-03-30",
+    "estado": "guardado",
+    "materiales": [
+        {
+            "datetime_range_utc_06": "",
+            "is_spinoff": "No",
+            "season": "Meitantei Pretty Cure!",
+            "type_resource": "Episodio",
+            "title_material": "07. ¡Oh, no! ¿La escuela es un laberinto",
+            "type_repeat": "",
+            "type_listen": "",
+            "model_writer": "locally"
+        },
+        {
+            "datetime_range_utc_06": "",
+            "is_spinoff": "No",
+            "season": "Meitantei Pretty Cure!",
+            "type_resource": "Episodio",
+            "title_material": "08. ¡Una linda sonrisa en Pretty Holic!",
+            "type_repeat": "",
+            "type_listen": "",
+            "model_writer": "locally"
+        }
+    ],
+    "id": "bf5a9bc2-cfb0-44e3-be8e-3434811163a0",
+    "created_at": "2026-03-27T19:21:33.021340",
+    "vertion": "1",
+    "updated_at": "2026-03-27T19:21:33.021340"
+}
+```
 
 ---
 
