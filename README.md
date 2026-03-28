@@ -1,183 +1,204 @@
+<p align="center">
+  <img src="img/icon.png" width="128" height="128" alt="Precure Media Manager Icon">
+</p>
+
 # 📺 Precure Media Manager (Desktop)
 
-Sistema integral de gestión de recursos multimedia para la franquicia Precure. Aplicación de escritorio basada en PyQt6 que gestiona episodios, películas, soundtracks y su historial de visualización, con integración de Telegram, sincronización a Firebase y una API REST interna.
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Framework](https://img.shields.io/badge/UI-PyQt6-green.svg)](https://www.riverbankcomputing.com/software/pyqt/)
+[![Architecture](https://img.shields.io/badge/Architecture-MVC%20%2B%20Services-orange.svg)](#architecture)
 
-## 🛠️ Tecnologías
+Precure Media Manager is a comprehensive desktop application designed for the management and tracking of multimedia resources (episodes, movies, soundtracks) related to the Precure franchise. It features a robust SQLite-based yearly database architecture, Telegram integration for automated downloads, Firebase synchronization, and an internal REST API.
 
-* **Lenguaje:** Python 3.10+
-* **Interfaz Gráfica:** PyQt6
-* **Base de Datos:** SQLite (Arquitectura de bases de datos anuales y global)
-* **API/Servidor:** Flask + Waitress
-* **Integración Mensajería:** Telethon (Telegram Bot)
-* **Procesamiento de Excel:** openpyxl
-* **Cloud:** Firebase Admin SDK
-* **Multimedia:** ffmpeg/ffprobe (para detección de metadatos y duración)
+---
 
-## 🏗️ Arquitectura del Proyecto
+## 🌎 Idiomas / Languages
+- [English](#-precure-media-manager-desktop)
+- [Español (Spanish)](#-precure-media-manager-desktop-es)
 
-```
-StoreEtude/
-├── main.pyw                    # Punto de entrada (Windows GUI)
-├── requirements.txt            # Dependencias
-│
-├── 📦 controllers/             # Controladores principales
-│   ├── main_controller.py      # Coordinador central de lógica
-│   └── telegram_controller.py  # Manejo de bot Telegram
-│
-├── 📦 core/                    # Lógica de negocio
-│   ├── api_server.py          # Servidor Flask REST
-│   ├── app_state.py           # Estado global de la aplicación
-│   ├── config_manager.py      # Gestión de configuración
-│   ├── data_migration.py      # Migraciones y conversiones de datos
-│   ├── db_manager_utils.py    # Inicialización y gestión de BD
-│   ├── db_operations.py       # Operaciones CRUD en BD
-│   ├── drive_monitor.py       # Monitoreo de unidades de almacenamiento
-│   ├── firebase_manager.py    # Integración con Firebase
-│   ├── resource_management.py # Gestión de recursos (escaneo, vinculación)
-│   ├── sync_manager.py        # Sincronización de datos
-│   ├── telegram_manager.py    # Gestor del bot Telegram
-│   └── whitelist_manager.py   # Gestión de lista blanca de usuarios
-│
-├── 📦 db/                      # Capa de acceso a datos
-│   ├── connection.py          # Manejo de conexiones SQLite
-│   └── session_manager.py     # Gestor de sesiones de BD
-│
-├── 📦 ui/                      # Interfaz de usuario
-│   ├── main_window.py         # Ventana principal
-│   ├── actions.py             # Acciones de menú y botones
-│   ├── filter_widget.py       # Widget de filtrado estilo Excel
-│   ├── warning_bar.py         # Barra de advertencias
-│   └── 📂 table/              # Módulo de tablas (en desarrollo)
-│
-├── 📦 dialogs/                 # Diálogos y formularios
-│   ├── common_delegates.py    # Delegados personalizados para celdas
-│   ├── settings_dialog.py     # Diálogo de configuración
-│   ├── database_form.py       # Formulario de gestión de BD
-│   ├── column_management.py   # Gestión de columnas en tablas
-│   ├── telegram_download.py   # Diálogo de descarga desde Telegram
-│   ├── whitelist_dialog.py    # Gestión de whitelist
-│   ├── chat_selection.py      # Selección de chat Telegram
-│   ├── year_range.py          # Selección de rango de años
-│   ├── duplicate_action.py    # Gestión de duplicados
-│   ├── report_materials.py    # Generación de reportes
-│   └── __init__.py
-│
-├── 📦 services/                # Servicios de negocio
-│   ├── db_service.py          # Servicio de base de datos
-│   ├── migration_service.py   # Servicio de migraciones
-│   ├── scanner_service.py     # Servicio de escaneo de archivos
-│   ├── sync_service.py        # Servicio de sincronización
-│   ├── 📂 telegram/           # Submódulo de servicios Telegram
-│   └── __init__.py
-│
-├── 📂 journals_manager/        # Gestor de diarios/registros
-│   ├── journal_gui.py         # Interfaz de diarios
-│   └── journal_logic.py       # Lógica de diarios
-│
-├── 📂 sql/                     # Scripts SQL
-│   ├── global.sql             # Esquema BD global
-│   └── yearly.sql             # Esquema BD anuales
-│
-├── 📂 db/                      # Directorio de bases de datos (runtime)
-│   └── *.db                   # Archivos SQLite generados
-│
-└── 📂 img/                     # Assets de imagen
-```
+---
 
-## 📋 Estructura de la Base de Datos
+## 🚀 Key Features
 
-### Base de Datos Global (`_global.db`)
+### 📦 Resource Management
+*   **Automated Scanning:** Intelligent detection of `.mp4`, `.mkv`, and audio files, linking them to the database registry.
+*   **Dynamic CRUD:** Full table editing support with foreign key validation and custom delegates.
+*   **Bulk Migration:** Excel-based data import for resources and viewing history.
+*   **Metadata Detection:** Integration with `ffprobe` for duration and stream analysis.
 
-Contiene metadatos maestros:
-* **T_Seasons:** Temporadas (años, nombres, rutas maestras)
-* **T_Type_Resources:** Catálogo de tipos (Episodio, Película, Soundtrack, etc.)
-* **T_Opener_Models:** Modelos de apertura/versiones
-* **T_Type_Catalog_Reg:** Clasificación de tipos de registro
+### 🔍 Advanced Visualization
+*   **Excel-Style Filtering:** Multi-column filtering and sorting system.
+*   **Real-time Analytics:** Automatic calculation of playback durations (lapses) and opening version detection.
+*   **Material Reporting:** Specialized tools for generating collection reports.
 
-### Bases de Datos Anuales (`AAAA.db`)
+### 🌐 Connectivity & Integration
+*   **Telegram Downloader:** Dedicated bot integration (`Telethon`) for downloading resources directly from chats.
+*   **Firebase Sync:** Bidirectional synchronization of "Journals" (Viewing Agendas) via Firebase Admin SDK.
+*   **Internal REST API:** Flask-powered server (Waitress) for programmatic resource queries and database access.
+*   **Security:** Network-based whitelisting (SSID/BSSID/Gateway) to control API and Firebase access.
 
-Cada año desde 2004 al presente:
-* **T_Resources:** Inventario de archivos (rutas, títulos, duración, fecha descarga)
-* **T_Registry:** Historial de visualización (rangos, lapsos, modelos detectados)
+### 🛡️ Reliability
+*   **Hybrid Offline Mode:** Seamless hot-swapping between external drive (Online) and local SQLite snapshots (Offline).
+*   **Drive Monitoring:** Real-time tracking of hardware connectivity and storage space.
 
-## ✨ Características Principales
+---
 
-### Gestión de Recursos
-- [x] **CRUD Dinámico:** Edición completa de tablas con soporte para claves foráneas
-- [x] **Escaneo Automático:** Detección de `.mp4`, `.mkv` y audios vinculándolos automáticamente
-- [x] **Importación desde Excel:** Migración masiva de datos existentes
-- [x] **Propagación de Esquemas:** Cambios de columnas se replican en todas las BD anuales
+## 🏗️ Architecture
 
-### Visualización y Análisis
-- [x] **Filtros Avanzados:** Sistema estilo Excel con múltiples criterios
-- [x] **Cálculos Automáticos:** Duración de reproducciones (lapsos) en tiempo real
-- [x] **Detección de Modelos:** Identificación automática de versiones de apertura
-- [x] **Reportes:** Generación de reportes de materiales
+The project follows a strict **Layered MVC (Model-View-Controller)** pattern combined with a **Service Layer** to ensure high decoupling and maintainability.
 
-### Integración Externa
-- [x] **Bot Telegram:** Descarga de recursos directamente desde Telegram
-- [x] **Firebase Sync:** Sincronización de datos a Firebase
-- [x] **API REST:** Servidor interno Flask para consultas programáticas
-- [x] **Whitelist:** Control de acceso por usuario/chat en Telegram
+### Layer Breakdown:
+1.  **Presentation (UI):** Built with `PyQt6`. Encapsulates views and user interaction logic.
+2.  **Orchestration (Controllers):** Thin controllers (`MainController`) that coordinate the flow between the UI and Services.
+3.  **Business Logic (Services):** Domain-specific logic (Scanning, Migration, Sync) isolated from UI concerns.
+4.  **Data/Core:** Low-level database management, configuration handling, and external API managers.
 
-### Mantenimiento
-- [x] **Consola SQL Integrada:** Ejecución de scripts SQL directos
-- [x] **Logs en Tiempo Real:** Visualización de operaciones del sistema
-- [x] **Monitoreo de Unidades:** Seguimiento de espacios de almacenamiento
-- [x] **Gestión de Configuración:** Interfaz centralizada de configuración
+### Directory Structure:
 
-## 🚀 Instalación y Ejecución
+| Directory / File | Responsibility |
+|------------------|----------------|
+| `main.pyw` | Main entry point for the GUI application. |
+| `controllers/` | Orchestrators (`MainController`, `TelegramController`) that coordinate flow between UI and Services. |
+| `core/` | Cross-cutting concerns: `ConfigManager`, `APIServer`, `FirebaseManager`, and low-level resource logic. |
+| `db/` | Low-level SQLite connection management (`QSqlDatabase`) and session/year context handling. |
+| `services/` | Encapsulated business services (e.g., `ScannerService`, `MigrationService`, `SyncService`). |
+| `ui/` | Core UI components: `MainWindow`, `ActionsManager`, and modular table widgets in `ui/table/`. |
+| `dialogs/` | Modularized forms and custom cell delegates (e.g., `SpinoffDelegate`) used throughout the app. |
+| `journals_manager/` | Specialized module for the "Journal Agenda" system with its own logic and GUI components. |
+| `sql/` | Master SQL schema definitions used for database initialization and maintenance. |
+| `img/` | Application assets, icons, and splash screens. |
 
-### Requisitos Previos
-- Python 3.10 o superior
-- `ffmpeg` instalado y accesible desde PATH
+---
 
-### Pasos de Instalación
+## 🗄️ Database Schema
 
-```bash
-# 1. Clonar el repositorio
-git clone https://github.com/HostAngelDoll/StoreEtude.git
-cd StoreEtude
+### 1. Global Database (`_global.db`)
+Stores master metadata used across all years:
+*   **T_Seasons:** Franchise installments, master paths, and year mappings.
+*   **T_Type_Resources:** Resource categories (Episodes, Movies, OSTs).
+*   **T_Opener_Models:** Opening/Ending version definitions.
+*   **T_Type_Catalog_Reg:** Registry classification types.
 
-# 2. Crear entorno virtual
-python -m venv venv
+### 2. Yearly Databases (`YYYY.db`)
+Isolated databases for each year (2004 - Present):
+*   **T_Resources:** File inventory (paths, titles, duration, download timestamps).
+*   **T_Registry:** Viewing history, playback lapses, and version tracking.
 
-# 3. Activar entorno (Windows)
-venv\Scripts\activate
-# O en Linux/Mac:
-source venv/bin/activate
+---
 
-# 4. Instalar dependencias
-pip install -r requirements.txt
+## 🛠️ Setup & Installation
 
-# 5. Ejecutar aplicación
-python main.pyw
-```
+### Prerequisites
+*   Python 3.10+
+*   `ffmpeg` & `ffprobe` (Must be in system PATH)
 
-## 📝 Flujo de Trabajo Principal
+### Installation
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/HostAngelDoll/StoreEtude.git
+    cd StoreEtude
+    ```
+2.  **Create and activate a virtual environment:**
+    ```bash
+    python -m venv venv
+    # Windows:
+    venv\Scripts\activate
+    # Linux/Mac:
+    source venv/bin/activate
+    ```
+3.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+4.  **Launch the application:**
+    ```bash
+    python main.pyw
+    ```
 
-1. **Inicialización:** Al arrancar, se inicializan BD global y anuales
-2. **Interfaz:** Se carga la ventana principal con pestañas de recursos y registros
-3. **Operaciones:** CRUD de recursos, filtrado, búsqueda
-4. **Sincronización:** Datos se sincronizan con Firebase según configuración
-5. **Telegram:** Bot espera comandos para descargas y consultas
-6. **Reporte:** Generación de reportes sobre colección
+---
 
-## 🔐 Módulos Clave
+## ⚙️ Configuration
 
-| Módulo | Responsabilidad |
-|--------|-----------------|
-| `main_controller.py` | Orquestación central, hilos, coordinación |
-| `main_window.py` | Interfaz gráfica PyQt6 |
-| `api_server.py` | Servidor Flask para API REST |
-| `telegram_manager.py` | Gestor del bot Telegram con Telethon |
-| `resource_management.py` | Escaneo y vinculación automática |
-| `config_manager.py` | Gestión de configuraciones persistentes |
-| `db_operations.py` | Operaciones SQL ejecutadas |
+The application centralizes its configuration in a `config.json` file managed by `ConfigManager`.
 
-## 📌 Notas de Desarrollo
+*   **Telegram:** Requires `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org).
+*   **Firebase:** Requires a service account JSON file and the Realtime Database URL.
+*   **API:** Port and toggle available in the "Servidor API" settings tab.
 
-- La aplicación sigue patrón MVC (Modelo-Vista-Controlador)
-- Los servicios encapsulan lógica reutilizable
-- Los diálogos modularizados facilitan mantenimiento
-- Base de datos con arquitectura híbrida (global + anuales) optimiza rendimiento
+---
+
+## 👨‍💻 Developer Notes
+
+*   **Syntax Verification:** Use `py_compile` to check component integrity before committing.
+*   **Extensibility:** New features should be implemented as a **Service** first, then exposed via a **Controller**.
+*   **Database Migrations:** Schema changes in `sql/` files should be propagated using the internal `DBService`.
+
+---
+
+# 📺 Precure Media Manager (Desktop) [ES]
+
+Sistema integral de gestión de recursos multimedia para la franquicia Precure. Basado en una arquitectura de escritorio moderna que prioriza la modularidad y el desacoplamiento de capas.
+
+---
+
+## 🚀 Características Principales
+
+### 📦 Gestión de Recursos
+*   **Escaneo Inteligente:** Detección automática de archivos multimedia y vinculación con el registro de la base de datos.
+*   **CRUD Dinámico:** Soporte completo para edición de tablas con validación de claves foráneas y delegados personalizados.
+*   **Migración Masiva:** Importación de datos desde Excel para recursos e historial de visualización.
+*   **Detección de Metadatos:** Integración con `ffprobe` para análisis de duración y flujos.
+
+### 🔍 Visualización Avanzada
+*   **Filtros estilo Excel:** Sistema de filtrado y ordenamiento multi-columna.
+*   **Analítica en Tiempo Real:** Cálculo automático de lapsos de reproducción e identificación de versiones de apertura.
+*   **Reportes de Material:** Generación de reportes detallados sobre la colección.
+
+### 🌐 Integración y Conectividad
+*   **Descargador Telegram:** Integración con `Telethon` para descarga directa de recursos desde chats.
+*   **Sincronización Firebase:** Sincronización bidireccional de "Jornadas" (Agendas de visualización).
+*   **API REST Interna:** Servidor Flask (Waitress) para consultas programáticas y acceso a datos.
+*   **Seguridad:** Lista blanca de redes (SSID/BSSID) para control de acceso a servicios externos.
+
+---
+
+## 🏗️ Arquitectura
+
+El proyecto implementa un patrón **MVC por Capas** junto con una **Capa de Servicios** para garantizar el desacoplamiento.
+
+### Desglose de Directorios y Archivos:
+
+| Directorio / Archivo | Responsabilidad |
+|----------------------|----------------|
+| `main.pyw` | Punto de entrada principal para la aplicación GUI. |
+| `controllers/` | Orquestadores (`MainController`, `TelegramController`) que coordinan el flujo entre la UI y los Servicios. |
+| `core/` | Lógica transversal: `ConfigManager`, `APIServer`, `FirebaseManager` y lógica de recursos de bajo nivel. |
+| `db/` | Gestión de conexiones SQLite (`QSqlDatabase`) y manejo de contexto de sesión/año. |
+| `services/` | Servicios de negocio encapsulados (ej. `ScannerService`, `MigrationService`, `SyncService`). |
+| `ui/` | Componentes de UI principales: `MainWindow`, `ActionsManager` y widgets de tabla modulares en `ui/table/`. |
+| `dialogs/` | Formularios modularizados y delegados de celda personalizados usados en toda la app. |
+| `journals_manager/` | Módulo especializado para el sistema de "Jornadas" con su propia lógica y componentes GUI. |
+| `sql/` | Definiciones maestras de esquemas SQL para inicialización y mantenimiento. |
+| `img/` | Assets de la aplicación, iconos y pantallas de carga. |
+
+---
+
+## 🛠️ Instalación y Requisitos
+
+### Requisitos
+*   Python 3.10+
+*   `ffmpeg` & `ffprobe` en el PATH del sistema.
+
+### Instalación
+1.  Clonar: `git clone https://github.com/HostAngelDoll/StoreEtude.git`
+2.  Entorno virtual: `python -m venv venv`
+3.  Dependencias: `pip install -r requirements.txt`
+4.  Ejecución: `python main.pyw`
+
+---
+
+## 🔐 Notas para Desarrolladores
+
+*   **Principio de Responsabilidad Única:** Mantener lógica de negocio fuera de los archivos de la `ui/`.
+*   **Modo Offline:** El sistema soporta hot-swap entre la unidad externa 'E:/' y snapshots locales en `offline_dbs/`.
+*   **Configuración:** Gestionada a través de `ConfigManager`, persistida en el registro de Windows y archivos JSON.
