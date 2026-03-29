@@ -111,8 +111,14 @@ class TelegramManager(QObject):
         session_path = os.path.join(os.path.dirname(self.config.config_path), "session_telegram")
 
         if self.client is None:
-            self.client = TelegramClient(session_path, api_id_int, api_hash)
-
+            self.client = TelegramClient(
+                session_path, 
+                api_id_int, 
+                api_hash,
+                connection_retries=5,
+                retry_delay=2
+            )
+                
         return self.client
 
     def connect(self):
@@ -301,7 +307,12 @@ class TelegramManager(QObject):
                     f"Descargando... {mb_curr:.1f} MB / {mb_total:.1f} MB"
                 )
 
-            await client.download_media(msg, file=dest_path, progress_callback=progress_callback)
+            await client.download_media(
+                msg,
+                file=dest_path,
+                progress_callback=progress_callback,
+                part_size_kb=1024 # ó 512
+            )
             self.download_finished.emit(True, dest_path)
 
         except Exception as e:
