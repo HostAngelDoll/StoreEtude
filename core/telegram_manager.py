@@ -311,7 +311,6 @@ class TelegramManager(QObject):
                 msg,
                 file=dest_path,
                 progress_callback=progress_callback,
-                part_size_kb=1024 # ó 512
             )
             self.download_finished.emit(True, dest_path)
 
