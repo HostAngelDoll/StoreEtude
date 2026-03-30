@@ -105,6 +105,10 @@ class SettingsDialog(QDialog):
         self.api_hash_edit = QLineEdit(self.config.get("telegram.api_hash", ""))
         tg_form.addRow("API Hash:", self.api_hash_edit)
 
+        self.phone_edit = QLineEdit(self.config.get("telegram.phone", ""))
+        self.phone_edit.setPlaceholderText("+34600000000")
+        tg_form.addRow("Teléfono:", self.phone_edit)
+
         help_label = QLabel('<a href="https://my.telegram.org/">¿Dónde consigo esto?</a>')
         help_label.setOpenExternalLinks(True)
         tg_form.addRow("", help_label)
@@ -246,7 +250,8 @@ class SettingsDialog(QDialog):
         elif not self.tg_manager.is_connecting():
             # Save current API credentials first
             self.config.set("telegram.api_id", self.api_id_edit.text(), save=False)
-            self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=True)
+            self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=False)
+            self.config.set("telegram.phone", self.phone_edit.text(), save=True)
             # Ensure we start from a clean state if credentials changed
             self.tg_manager.disconnect()
             self.tg_manager.connect()
@@ -412,7 +417,8 @@ class SettingsDialog(QDialog):
         self.config.set("firebase.credentials_path", getattr(self, '_fb_creds_path', ""), save=False)
 
         self.config.set("telegram.api_id", self.api_id_edit.text(), save=False)
-        self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=True) # Last one saves
+        self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=False)
+        self.config.set("telegram.phone", self.phone_edit.text(), save=True) # Last one saves
 
         # Update API server status in main window
         if self.parent() and hasattr(self.parent(), "update_api_server_status"):

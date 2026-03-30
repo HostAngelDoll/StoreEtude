@@ -148,6 +148,7 @@ class TelegramManager(QObject):
     async def _connect_async(self):
         client = await self._get_client()
         if not client:
+            self._is_connecting = False
             self._last_status = "Faltan API ID / API Hash"
             self.connection_status.emit(self._last_status, False)
             return
@@ -158,9 +159,17 @@ class TelegramManager(QObject):
 
             if not await client.is_user_authorized():
                 self._is_connected = False
+                self._is_connecting = False
                 self._last_status = "Requiere autenticación"
                 self.connection_status.emit(self._last_status, False)
-                self.auth_required.emit("phone")
+
+                # Check for saved phone
+                saved_phone = self.config.get("telegram.phone", "")
+                if saved_phone:
+                    # Automatically trigger phone submission if available
+                    await self._submit_phone_async(saved_phone)
+                else:
+                    self.auth_required.emit("phone")
                 return
 
             me = await client.get_me()
@@ -182,6 +191,7 @@ class TelegramManager(QObject):
     async def _submit_phone_async(self, phone):
         client = await self._get_client()
         if not client:
+            self._is_connecting = False
             self.connection_status.emit("Cliente no disponible", False)
             return
 
@@ -189,8 +199,11 @@ class TelegramManager(QObject):
             result = await client.send_code_request(phone)
             self._phone_code_hash = result.phone_code_hash
             self._current_phone = phone
+            self._is_connecting = False # Reset so buttons enable while waiting for code
+            self.connection_status.emit("Código de verificación enviado", False)
             self.auth_required.emit("code")
         except Exception as e:
+            self._is_connecting = False
             self.connection_status.emit(f"Error al enviar código: {e}", False)
 
     def submit_code(self, code):
@@ -199,6 +212,7 @@ class TelegramManager(QObject):
     async def _submit_code_async(self, code):
         client = await self._get_client()
         if not client:
+            self._is_connecting = False
             self.connection_status.emit("Cliente no disponible", False)
             return
 
@@ -210,8 +224,10 @@ class TelegramManager(QObject):
             )
             await self._connect_async()
         except SessionPasswordNeededError:
+            self._is_connecting = False
             self.auth_required.emit("password")
         except Exception as e:
+            self._is_connecting = False
             self.connection_status.emit(f"Error al validar código: {e}", False)
 
     def submit_password(self, password):
@@ -220,6 +236,7 @@ class TelegramManager(QObject):
     async def _submit_password_async(self, password):
         client = await self._get_client()
         if not client:
+            self._is_connecting = False
             self.connection_status.emit("Cliente no disponible", False)
             return
 
@@ -227,6 +244,7 @@ class TelegramManager(QObject):
             await client.sign_in(password=password)
             await self._connect_async()
         except Exception as e:
+            self._is_connecting = False
             self.connection_status.emit(f"Error al validar contraseña: {e}", False)
 
     def fetch_chats(self):

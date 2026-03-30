@@ -54,6 +54,7 @@ class ConfigManager:
             "telegram": {
                 "api_id": "",
                 "api_hash": "",
+                "phone": "",
                 "chat_id": None,
                 "chat_name": ""
             },
