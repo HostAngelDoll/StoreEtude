@@ -30,8 +30,85 @@ class JournalManager:
                     print(f"Error loading journal {filename}: {e}")
         return journals
 
+    def _calculate_material_path(self, material):
+        title = material.get('title_material', '')
+        season = material.get('season', '')
+        type_res = material.get('type_resource', '')
+
+        if title == "[User selection]" or not title or not season:
+            return ""
+
+        import sqlite3
+        from core.db_manager_utils import get_global_db_path, get_yearly_db_path, get_offline_db_path
+
+        global_db = get_global_db_path()
+        if not os.path.exists(global_db):
+            global_db = get_offline_db_path(global_db)
+
+        if not os.path.exists(global_db):
+            return ""
+
+        try:
+            conn_g = sqlite3.connect(global_db)
+            cursor_g = conn_g.cursor()
+            cursor_g.execute("SELECT year, path_master FROM T_Seasons WHERE precure_season_name = ?", (season,))
+            row_s = cursor_g.fetchone()
+            conn_g.close()
+
+            if not row_s:
+                return ""
+
+            year, master_folder = row_s
+
+            yearly_db = get_yearly_db_path(year)
+            if not os.path.exists(yearly_db):
+                yearly_db = get_offline_db_path(yearly_db)
+
+            if not os.path.exists(yearly_db):
+                return ""
+
+            conn_y = sqlite3.connect(yearly_db)
+            cursor_y = conn_y.cursor()
+
+            col = ""
+            if type_res == "Episodio":
+                col = "relative_path_of_file"
+            elif type_res == "Soundtrack":
+                col = "relative_path_of_soundtracks"
+            elif type_res in ["Letra", "Lyrics"]:
+                col = "relative_path_of_lyrics"
+
+            if not col:
+                conn_y.close()
+                return ""
+
+            cursor_y.execute(f"SELECT {col} FROM T_Resources WHERE title_material = ?", (title,))
+            row_r = cursor_y.fetchone()
+            conn_y.close()
+
+            if not row_r or not row_r[0]:
+                return ""
+
+            relative_path = row_r[0]
+
+            # Normalization: path = "/" + year + "/" + master_folder + "/" + relative_path
+            full_path = f"/{year}/{master_folder}/{relative_path}"
+            full_path = full_path.replace("\\", "/").strip()
+            while "//" in full_path:
+                full_path = full_path.replace("//", "/")
+
+            return full_path
+
+        except Exception as e:
+            print(f"Error calculating path: {e}")
+            return ""
+
     def save_journal(self, data):
         # data should have 'nombre', 'fecha_esperada', 'estado', 'materiales'
+        # Enrich materials with path
+        for material in data.get('materiales', []):
+            material['path'] = self._calculate_material_path(material)
+
         journal_id = data.get('id')
         if not journal_id:
             journal_id = str(uuid.uuid4())
