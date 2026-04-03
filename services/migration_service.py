@@ -7,11 +7,11 @@ class MigrationService:
     def get_migrator(self):
         return self._migrator
 
-    def migrate_resources(self):
-        self._migrator.migrate_resources()
+    def migrate_resources(self, years):
+        self._migrator.migrate_resources(years)
 
-    def migrate_registry(self):
-        self._migrator.migrate_registry()
+    def migrate_registry(self, years):
+        self._migrator.migrate_registry(years)
 
     def cancel(self):
         self._migrator.cancel()

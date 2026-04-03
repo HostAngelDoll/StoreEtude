@@ -136,7 +136,9 @@ class MainWindow(QMainWindow):
             item.setEditable(False)
             root_node.appendRow(item)
         self.year_tree.setModel(self.year_model)
-        self.year_tree.clicked.connect(self._on_year_clicked)
+        self.year_tree.selectionModel().currentChanged.connect(
+            lambda current, previous: self._on_year_clicked(current)
+        )
 
         # Initial selection
         self.year_tree.setCurrentIndex(self.year_model.index(0, 0))

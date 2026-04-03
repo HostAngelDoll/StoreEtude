@@ -92,6 +92,11 @@ class MainController(QObject):
         self.on_year_selected(self.win.get_current_year())
 
     def on_year_selected(self, year):
+        # Submit pending changes in current year tabs before switching
+        for tab in self.win.year_tabs:
+            if hasattr(tab, 'model') and tab.model:
+                tab.model.submitAll()
+
         if self.db_session.open_year_db(year):
             self.win.resources_tab.update_database("year_db")
             self.win.registry_tab.update_database("year_db")
@@ -275,6 +280,12 @@ class MainController(QObject):
         if self.state.mode == AppMode.OFFLINE:
             self.win.show_error("No se puede migrar en modo solo lectura.", "Migración")
             return
+        current_year = self.win.get_current_year()
+        dialog = YearRangeDialog(current_year, self.win)
+        dialog.setWindowTitle("Migrar recursos desde Excel")
+        if dialog.exec() != QDialog.DialogCode.Accepted: return
+        years = dialog.get_years(current_year)
+
         progress = self.win.create_progress_dialog("Migrando recursos...", title="Trabajando con años")
 
         self.migrator_thread = QThread()
@@ -290,13 +301,19 @@ class MainController(QObject):
         migrator.log_message.connect(self.win.log)
         migrator.finished.connect(on_finished)
         progress.canceled.connect(self.migration_service.cancel)
-        self.migrator_thread.started.connect(self.migration_service.migrate_resources)
+        self.migrator_thread.started.connect(lambda: self.migration_service.migrate_resources(years))
         self.migrator_thread.start(); progress.show()
 
     def migrate_registry_from_excel(self):
         if self.state.mode == AppMode.OFFLINE:
             self.win.show_error("No se puede migrar en modo solo lectura.", "Migración")
             return
+        current_year = self.win.get_current_year()
+        dialog = YearRangeDialog(current_year, self.win)
+        dialog.setWindowTitle("Migrar registros desde Excel")
+        if dialog.exec() != QDialog.DialogCode.Accepted: return
+        years = dialog.get_years(current_year)
+
         progress = self.win.create_progress_dialog("Migrando registros...", title="Trabajando con años")
 
         self.reg_mig_thread = QThread()
@@ -317,7 +334,7 @@ class MainController(QObject):
         migrator.finished.connect(on_finished)
         migrator.request_confirmation.connect(handle_confirmation, Qt.ConnectionType.BlockingQueuedConnection)
         progress.canceled.connect(self.migration_service.cancel)
-        self.reg_mig_thread.started.connect(self.migration_service.migrate_registry)
+        self.reg_mig_thread.started.connect(lambda: self.migration_service.migrate_registry(years))
         self.reg_mig_thread.start(); progress.show()
 
     def regenerate_registry_index(self):
@@ -389,6 +406,7 @@ class MainController(QObject):
         self.win.actions.show_construction_logs.setChecked(self.config.get("ui.show_construction_logs", False))
 
     def save_settings(self):
+        # Save settings
         if not self.win.isMinimized():
             geo = self.win.get_geometry_base64()
             if geo: self.config.set("ui.geometry", geo)
@@ -397,6 +415,14 @@ class MainController(QObject):
         self.config.set("ui.sidebar_visible", self.win.dock.isVisible())
         self.config.set("ui.console_visible", self.win.registry_tab.console_area.isVisible())
         self.config.save()
+
+        # Save pending changes in all active table models
+        for tab in self.win.all_tabs:
+            if hasattr(tab, 'model') and tab.model:
+                if tab.model.submitAll():
+                    self.win.log(f"Cambios guardados en tabla {tab.table_name}")
+                else:
+                    self.win.log(f"Error al guardar en {tab.table_name}: {tab.model.lastError().text()}", is_error=True)
 
     def export_active_tab(self):
         tab = self.win.get_active_tab_widget()

@@ -18,6 +18,7 @@ class DBOperations(QObject):
 
     def cancel(self):
         self._cancel_requested = True
+        self.log_message.emit("Cancelación solicitada...", True, "registry")
 
     def regenerate_registry_index(self, years):
         total_processed = 0
@@ -53,21 +54,30 @@ class DBOperations(QObject):
                     continue
 
                 original_sql = row_sql[0]
+                # Ensure we use T_Registry_temp as the name in the NEW schema
                 temp_sql = re.sub(r'\bT_Registry\b', 'T_Registry_temp', original_sql)
+                # If for some reason T_Registry_New exists from a previous failed run, drop it
+                cursor.execute("DROP TABLE IF EXISTS T_Registry_New")
+                cursor.execute("DROP TABLE IF EXISTS T_Registry_temp")
 
                 cursor.execute("BEGIN TRANSACTION")
-                cursor.execute("DROP TABLE IF EXISTS T_Registry_temp")
-                cursor.execute(temp_sql)
+                try:
+                    cursor.execute(temp_sql)
 
-                cols_str = ", ".join(columns)
-                insert_sql = f"INSERT INTO T_Registry_temp ({cols_str}) SELECT {cols_str} FROM T_Registry ORDER BY datetime_range_utc_06 ASC"
-                cursor.execute(insert_sql)
+                    cols_str = ", ".join(columns)
+                    insert_sql = f"INSERT INTO T_Registry_temp ({cols_str}) SELECT {cols_str} FROM T_Registry ORDER BY datetime_range_utc_06 ASC"
+                    cursor.execute(insert_sql)
 
-                cursor.execute("DROP TABLE T_Registry")
-                cursor.execute("ALTER TABLE T_Registry_temp RENAME TO T_Registry")
-                cursor.execute("DELETE FROM sqlite_sequence WHERE name='T_Registry'")
+                    cursor.execute("DROP TABLE T_Registry")
+                    cursor.execute("ALTER TABLE T_Registry_temp RENAME TO T_Registry")
+                    # No need to delete from sqlite_sequence if we use the original schema which has AUTOINCREMENT
+                    # But good to reset it if we want the new IDs to start from 1
+                    cursor.execute("DELETE FROM sqlite_sequence WHERE name='T_Registry'")
 
-                conn.commit()
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    raise e
                 total_processed += 1
                 self.log_message.emit(f"Índice regenerado para el año {year}", False, "registry")
                 conn.close()
