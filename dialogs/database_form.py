@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QDialog, QFormLayout, QLineEdit, QSpinBox,
                              QCheckBox, QDialogButtonBox, QMessageBox, QComboBox)
 from PyQt6.QtSql import QSqlRelationalTableModel, QSqlRelation, QSqlTableModel, QSqlDatabase
-from PyQt6.QtGui import QIcon
+from PyQt6.QtGui import QIcon, QIntValidator
 import os
 
 class DatabaseForm(QDialog):
@@ -80,13 +80,12 @@ class DatabaseForm(QDialog):
                 if row >= 0:
                     widget.setChecked(bool(self.record.value(i)))
             elif "total_" in field_name.lower() or "_num" in field_name.lower() or "episode_" in field_name.lower():
-                widget = QSpinBox()
-                widget.setRange(0, 9999)
+                widget = QLineEdit()
+                widget.setValidator(QIntValidator(0, 999999))
                 if row >= 0:
-                    try:
-                        widget.setValue(int(self.record.value(i)))
-                    except (TypeError, ValueError):
-                        widget.setValue(0)
+                    val = self.record.value(i)
+                    if val is not None and str(val).strip() != "":
+                        widget.setText(str(val))
             else:
                 widget = QLineEdit()
                 if row >= 0:
@@ -131,6 +130,7 @@ class DatabaseForm(QDialog):
 
         if success:
             db.commit()
+            self.model.select() # Ensure UI is in sync
             super().accept()
         else:
             db.rollback()

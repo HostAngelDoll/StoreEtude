@@ -19,17 +19,18 @@ class DataMigrator(QObject):
 
     def cancel(self):
         self._cancel_requested = True
+        self.log_message.emit("Cancelación solicitada...", True, "resources")
+        self.log_message.emit("Cancelación solicitada...", True, "registry")
 
     def set_confirmation_result(self, result: bool):
         self._confirmation_result = result
 
-    def migrate_resources(self):
+    def migrate_resources(self, years):
         base_dir = get_base_dir_path()
         if not os.path.exists(base_dir):
             self.error_occurred.emit(f"Ruta base {base_dir} no encontrada.")
             return
 
-        years = list(range(2004, datetime.now().year + 1))
         total_migrated = 0
         type_res_map = {}
         seasons_map = {}
@@ -76,6 +77,7 @@ class DataMigrator(QObject):
                 db_year_path = get_yearly_db_path(year)
                 conn_year = sqlite3.connect(db_year_path)
                 cursor_year = conn_year.cursor()
+                cursor_year.execute("BEGIN TRANSACTION")
 
                 existing_titles = set()
                 cursor_year.execute("SELECT title_material FROM T_Resources")
@@ -123,22 +125,26 @@ class DataMigrator(QObject):
                     except Exception as e:
                         self.log_message.emit(f"Error al migrar recurso {final_title}: {e}", True, "resources")
 
-                conn_year.commit()
+                if self._cancel_requested:
+                    conn_year.rollback()
+                else:
+                    conn_year.commit()
                 conn_year.close()
             except Exception as e:
+                try: conn_year.rollback(); conn_year.close()
+                except: pass
                 self.log_message.emit(f"Error procesando {excel_path}: {e}", True, "resources")
 
         self.progress_changed.emit(len(years), len(years), "Finalizado.")
         self.finished.emit(total_migrated)
 
-    def migrate_registry(self):
+    def migrate_registry(self, years):
         from core.db_manager_utils import calculate_lapsed, get_opener_model_info_sqlite
         base_dir = get_base_dir_path()
         if not os.path.exists(base_dir):
             self.error_occurred.emit(f"Ruta base {base_dir} no encontrada.")
             return
 
-        years = list(range(2004, datetime.now().year + 1))
         total_migrated = 0
         for i, year in enumerate(years):
             if self._cancel_requested: break
@@ -159,6 +165,7 @@ class DataMigrator(QObject):
                 db_year_path = get_yearly_db_path(year)
                 conn_year = sqlite3.connect(db_year_path)
                 cursor_year = conn_year.cursor()
+                cursor_year.execute("BEGIN TRANSACTION")
 
                 # Check if table has data
                 cursor_year.execute("SELECT COUNT(*) FROM T_Registry")
@@ -212,9 +219,14 @@ class DataMigrator(QObject):
                     except Exception as e:
                         self.log_message.emit(f"Error al migrar registro {title_material}: {e}", True, "registry")
 
-                conn_year.commit()
+                if self._cancel_requested:
+                    conn_year.rollback()
+                else:
+                    conn_year.commit()
                 conn_year.close()
             except Exception as e:
+                try: conn_year.rollback(); conn_year.close()
+                except: pass
                 self.log_message.emit(f"Error registry {year}: {e}", True, "registry")
 
         self.progress_changed.emit(len(years), len(years), "Finalizado.")

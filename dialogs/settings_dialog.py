@@ -83,6 +83,10 @@ class SettingsDialog(QDialog):
         self.show_console_cb.setChecked(self.config.get("ui.console_visible", True))
         ui_form.addRow("Ver consola SQL:", self.show_console_cb)
 
+        self.show_table_name_cb = QCheckBox()
+        self.show_table_name_cb.setChecked(self.config.get("ui.show_table_name", True))
+        ui_form.addRow("Ver nombre de tabla conectada:", self.show_table_name_cb)
+
         self.theme_combo = QComboBox()
         self.theme_combo.addItems(["Fusion", "Windows", "Dark"])
         self.theme_combo.setCurrentText(self.config.get("ui.theme", "Fusion"))
@@ -402,6 +406,7 @@ class SettingsDialog(QDialog):
         self.config.set("ui.show_construction_logs", self.show_const_logs_cb.isChecked(), save=False)
         self.config.set("ui.sidebar_visible", self.show_sidebar_cb.isChecked(), save=False)
         self.config.set("ui.console_visible", self.show_console_cb.isChecked(), save=False)
+        self.config.set("ui.show_table_name", self.show_table_name_cb.isChecked(), save=False)
         self.config.set("ui.theme", self.theme_combo.currentText(), save=False)
         self.config.set("security.whitelist_enabled", self.whitelist_enabled_cb.isChecked(), save=False)
 

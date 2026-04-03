@@ -30,6 +30,10 @@ class DataTableTab(QWidget):
         
         self.view = QTableView()
         self.model = None
+
+        self.table_label = QLabel(f"Tabla: {self.table_name}")
+        self.table_label.setStyleSheet("font-weight: bold; color: #555; padding: 2px;")
+
         self.init_ui_components()
 
     def init_ui_components(self):
@@ -49,7 +53,15 @@ class DataTableTab(QWidget):
         
         # Main Splitter for Table and Console
         self.main_splitter = QSplitter(Qt.Orientation.Vertical)
-        self.main_splitter.addWidget(self.view)
+
+        table_container = QWidget()
+        table_layout = QVBoxLayout(table_container)
+        table_layout.setContentsMargins(0,0,0,0)
+        table_layout.setSpacing(0)
+        table_layout.addWidget(self.table_label)
+        table_layout.addWidget(self.view)
+
+        self.main_splitter.addWidget(table_container)
         
         # SQL Console Area
         self.console_area = QWidget()
@@ -466,6 +478,13 @@ class DataTableTab(QWidget):
         main_win = None
         for widget in QApplication.topLevelWidgets():
             if isinstance(widget, QMainWindow): main_win = widget; break
+
+        from core.config_manager import ConfigManager
+        config = ConfigManager()
+        show_table_name = config.get("ui.show_table_name", True)
+        self.table_label.setVisible(show_table_name)
+        self.table_label.setText(f"Tabla: {self.table_name} ({db_conn_name})")
+
         show_logs = main_win.show_construction_logs.isChecked() if main_win and hasattr(main_win, 'show_construction_logs') else False
 
         def const_log(msg):

@@ -46,6 +46,7 @@ class ConfigManager:
                 "maximized": True,
                 "sidebar_visible": True,
                 "console_visible": True,
+                "show_table_name": True,
                 "auto_resize": True,
                 "show_construction_logs": False,
                 "theme": "Fusion",
