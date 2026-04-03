@@ -54,14 +54,14 @@ class DataTableTab(QWidget):
         # Main Splitter for Table and Console
         self.main_splitter = QSplitter(Qt.Orientation.Vertical)
 
-        table_container = QWidget()
-        table_layout = QVBoxLayout(table_container)
-        table_layout.setContentsMargins(0,0,0,0)
-        table_layout.setSpacing(0)
-        table_layout.addWidget(self.table_label)
-        table_layout.addWidget(self.view)
+        self.table_container = QWidget()
+        self.table_layout = QVBoxLayout(self.table_container)
+        self.table_layout.setContentsMargins(0,0,0,0)
+        self.table_layout.setSpacing(0)
+        self.table_layout.addWidget(self.table_label)
+        self.table_layout.addWidget(self.view)
 
-        self.main_splitter.addWidget(table_container)
+        self.main_splitter.addWidget(self.table_container)
         
         # SQL Console Area
         self.console_area = QWidget()
@@ -546,9 +546,10 @@ class DataTableTab(QWidget):
                 new_view.setItemDelegateForColumn(5, ComboDelegate("T_Type_Catalog_Reg", "type", "category='write'", parent=new_view))
                 const_log("Delegados personalizados asignados a T_Registry.")
 
-            const_log("Actualizando Splitter...")
+            const_log("Actualizando Layout...")
             old_view = self.view if hasattr(self, 'view') else None
-            self.main_splitter.replaceWidget(0, new_view)
+            # Replace view in layout to keep label alive
+            self.table_layout.replaceWidget(old_view, new_view)
             self.view = new_view; self.model = new_model
             self.apply_column_configs()
             if old_view: old_view.deleteLater()
