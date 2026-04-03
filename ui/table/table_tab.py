@@ -31,7 +31,7 @@ class DataTableTab(QWidget):
         self.view = QTableView()
         self.model = None
 
-        self.table_label = QLabel(f"Tabla: {self.table_name}")
+        self.table_label = QLabel()
         self.table_label.setStyleSheet("font-weight: bold; color: #555; padding: 2px;")
 
         self.init_ui_components()
@@ -263,6 +263,15 @@ class DataTableTab(QWidget):
         clipboard.setText(col_name)
         self.log(f"Nombre de columna '{col_name}' copiado al portapapeles.")
 
+    def _refresh_table_label(self):
+        if not self.model: return
+        from core.config_manager import ConfigManager
+        config = ConfigManager()
+        show_table_name = config.get("ui.show_table_name", True)
+        self.table_label.setVisible(show_table_name)
+        real_table = self.model.tableName()
+        self.table_label.setText(f"Tabla: {real_table} ({self.db_conn_name})")
+
     def log(self, message, is_error=False):
         self.log_viewer.moveCursor(QTextCursor.MoveOperation.End)
         fmt = QTextCharFormat()
@@ -331,6 +340,7 @@ class DataTableTab(QWidget):
         if success_count > 0:
             self.log(f"Ejecutadas con éxito {success_count} sentencias.")
             self.model.select()
+            self._refresh_table_label()
             if not error_occurred: self.sql_console.clear()
 
     def add_column(self, position):
@@ -479,12 +489,6 @@ class DataTableTab(QWidget):
         for widget in QApplication.topLevelWidgets():
             if isinstance(widget, QMainWindow): main_win = widget; break
 
-        from core.config_manager import ConfigManager
-        config = ConfigManager()
-        show_table_name = config.get("ui.show_table_name", True)
-        self.table_label.setVisible(show_table_name)
-        self.table_label.setText(f"Tabla: {self.table_name} ({db_conn_name})")
-
         show_logs = main_win.show_construction_logs.isChecked() if main_win and hasattr(main_win, 'show_construction_logs') else False
 
         def const_log(msg):
@@ -549,8 +553,10 @@ class DataTableTab(QWidget):
             const_log("Actualizando Layout...")
             old_view = self.view if hasattr(self, 'view') else None
             # Replace view in layout to keep label alive
+            # Replace view in layout to keep label alive
             self.table_layout.replaceWidget(old_view, new_view)
             self.view = new_view; self.model = new_model
+            self._refresh_table_label()
             self.apply_column_configs()
             if old_view: old_view.deleteLater()
             const_log("Reconstrucción finalizada con éxito.")
