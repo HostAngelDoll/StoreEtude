@@ -1,6 +1,6 @@
 import os
 import uvicorn
-from fastapi import FastAPI, HTTPException, Query, Depends
+from fastapi import FastAPI, HTTPException, Query, Depends, Request
 from fastapi.responses import FileResponse
 from PyQt6.QtCore import QThread, pyqtSignal
 from datetime import datetime
@@ -27,13 +27,16 @@ class APIServerThread(QThread):
         enabled = self.config.get("security.whitelist_enabled", False)
         if not enabled:
             return True
+        # Note: whitelist_manager.check_connection_status() currently checks
+        # the network state of the machine running StoreEtude, NOT the client IP.
+        # This is preserved as per existing logic, but made accessible via FastAPI.
         return self.whitelist_manager.check_connection_status() == "accepted"
 
     def _is_drive_connected(self):
         base_dir = self.config.get("base_dir_path")
         return os.path.exists(base_dir)
 
-    def _check_allowed_dependency(self):
+    def _check_allowed_dependency(self, request: Request):
         if not self._is_allowed():
             raise HTTPException(status_code=403, detail="Unauthorized network")
 
@@ -51,13 +54,10 @@ class APIServerThread(QThread):
 
         @self.app.get("/health")
         async def health():
-            if not self._is_drive_connected():
-                return {
-                    "status": "error",
-                    "detail": "storage not available"
-                }
+            is_connected = self._is_drive_connected()
             return {
-                "status": "ok"
+                "status": "ok" if is_connected else "error",
+                "storage": "available" if is_connected else "unavailable"
             }
 
         @self.app.get("/journals_sync")
