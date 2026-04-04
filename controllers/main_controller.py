@@ -36,6 +36,7 @@ class MainController(QObject):
         self.tg_controller = TelegramController(self.win, self.telegram_service)
 
         self.api_server_thread = APIServerThread()
+        self.api_server_thread.log_message.connect(self.on_api_log)
         self.last_device_change = 0
 
         self._setup_connections()
@@ -62,6 +63,7 @@ class MainController(QObject):
         self.win.settings_requested.connect(self.on_settings_requested)
         self.win.open_config_folder_requested.connect(self.on_open_config_folder_requested)
         self.win.save_requested.connect(self.save_settings)
+        self.win.api_server_toggle_requested.connect(self.toggle_api_server)
         self.win.export_requested.connect(self.export_active_tab)
         self.win.import_requested.connect(self.import_active_tab)
         self.win.add_row_requested.connect(self.add_row_to_active_tab)
@@ -393,8 +395,28 @@ class MainController(QObject):
         else: self.win.log(msg)
 
     def update_api_server_status(self):
+        running = self.api_server_thread.isRunning()
+        self.win.btn_toggle_api.setText("Detener Servidor API" if running else "Iniciar Servidor API")
+
         if self.config.get("api.enabled", False):
-            if not self.api_server_thread.isRunning(): self.api_server_thread.start()
+            if not running:
+                self.api_server_thread.start()
+                self.win.btn_toggle_api.setText("Detener Servidor API")
+
+    def toggle_api_server(self):
+        if self.api_server_thread.isRunning():
+            self.api_server_thread.stop()
+            self.config.set("api.enabled", False)
+            self.win.btn_toggle_api.setText("Iniciar Servidor API")
+        else:
+            self.api_server_thread.start()
+            self.config.set("api.enabled", True)
+            self.win.btn_toggle_api.setText("Detener Servidor API")
+
+    def on_api_log(self, message, is_error):
+        color = "#ff0000" if is_error else "#00ff00"
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        self.win.api_console.append(f'<span style="color: #888888;">[{timestamp}]</span> <span style="color: {color};">{message}</span>')
 
     def load_settings(self):
         self.win.dock.setVisible(self.config.get("ui.sidebar_visible", True))

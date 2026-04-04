@@ -1,7 +1,7 @@
 openpyxl
 PyQt6
 telethon
-flask
-waitress
+fastapi
+uvicorn
 firebase-admin
-werkzeug
+python-multipart

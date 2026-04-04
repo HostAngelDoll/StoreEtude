@@ -146,12 +146,8 @@ class SettingsDialog(QDialog):
         # --- Tab: Servidor API ---
         api_tab = QWidget()
         api_layout_v = QVBoxLayout(api_tab)
-        api_group = QGroupBox("Exposición de Recursos")
+        api_group = QGroupBox("Ajustes del Servidor API")
         api_form = QFormLayout()
-
-        self.api_enabled_cb = QCheckBox("Exponer materiales a la red local")
-        self.api_enabled_cb.setChecked(self.config.get("api.enabled", False))
-        api_form.addRow(self.api_enabled_cb)
 
         self.api_port_edit = QLineEdit(str(self.config.get("api.port", 9090)))
         api_form.addRow("Puerto API:", self.api_port_edit)
@@ -411,7 +407,6 @@ class SettingsDialog(QDialog):
         self.config.set("security.whitelist_enabled", self.whitelist_enabled_cb.isChecked(), save=False)
 
         # API
-        self.config.set("api.enabled", self.api_enabled_cb.isChecked(), save=False)
         try:
             self.config.set("api.port", int(self.api_port_edit.text()), save=False)
         except: pass
