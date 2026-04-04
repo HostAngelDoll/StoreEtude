@@ -2,7 +2,7 @@ import os
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.responses import FileResponse
-from PyQt6.QtCore import QThread
+from PyQt6.QtCore import QThread, pyqtSignal
 from datetime import datetime
 
 from core.config_manager import ConfigManager
@@ -11,6 +11,8 @@ from journals_manager.journal_logic import JournalManager
 from core.db_manager_utils import get_base_dir_path
 
 class APIServerThread(QThread):
+    log_message = pyqtSignal(str, bool)
+
     def __init__(self):
         super().__init__()
         self.config = ConfigManager()
@@ -168,6 +170,7 @@ class APIServerThread(QThread):
                 raise HTTPException(status_code=500, detail=str(e))
 
     def run(self):
+        self.config.load()
         port = self.config.get("api.port", 9090)
         self.running = True
 
@@ -176,11 +179,13 @@ class APIServerThread(QThread):
         self.server = uvicorn.Server(config)
 
         try:
+            self.log_message.emit(f"Servidor API iniciado en http://0.0.0.0:{port}", False)
             self.server.run()
         except Exception as e:
-            print(f"API Server error: {e}")
+            self.log_message.emit(f"Error en Servidor API: {e}", True)
         finally:
             self.running = False
+            self.log_message.emit("Servidor API detenido.", False)
 
     def stop(self):
         if self.server:

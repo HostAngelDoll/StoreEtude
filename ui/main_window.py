@@ -3,7 +3,7 @@ from datetime import datetime
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                              QTabWidget, QHBoxLayout, QTreeView,
                              QDockWidget, QMessageBox, QProgressDialog,
-                             QApplication)
+                             QApplication, QTextEdit, QPushButton, QSplitter)
 from PyQt6.QtCore import Qt, pyqtSignal, QByteArray
 from PyQt6.QtGui import QStandardItemModel, QStandardItem, QIcon, QPalette, QColor
 
@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
     import_requested = pyqtSignal()
     add_row_requested = pyqtSignal()
     resize_requested = pyqtSignal()
+    api_server_toggle_requested = pyqtSignal()
     closed = pyqtSignal()
 
     def __init__(self):
@@ -127,6 +128,17 @@ class MainWindow(QMainWindow):
     def _init_sidebar(self):
         self.dock = QDockWidget("Años", self)
         self.dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable)
+
+        # Container for Sidebar
+        sidebar_container = QWidget()
+        sidebar_layout = QVBoxLayout(sidebar_container)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_layout.setSpacing(0)
+
+        # Splitter to separate Year Tree and API Console
+        self.sidebar_splitter = QSplitter(Qt.Orientation.Vertical)
+
+        # Year Tree
         self.year_tree = QTreeView()
         self.year_tree.setHeaderHidden(True)
         self.year_model = QStandardItemModel()
@@ -139,11 +151,34 @@ class MainWindow(QMainWindow):
         self.year_tree.selectionModel().currentChanged.connect(
             lambda current, previous: self._on_year_clicked(current)
         )
-
-        # Initial selection
         self.year_tree.setCurrentIndex(self.year_model.index(0, 0))
 
-        self.dock.setWidget(self.year_tree)
+        # API Console Area
+        self.api_panel = QWidget()
+        api_layout = QVBoxLayout(self.api_panel)
+        api_layout.setContentsMargins(2, 2, 2, 2)
+
+        self.api_console = QTextEdit()
+        self.api_console.setReadOnly(True)
+        self.api_console.setPlaceholderText("Logs del Servidor API...")
+        self.api_console.setStyleSheet("background-color: #1a1a1a; color: #00ff00; font-family: Consolas, monospace; font-size: 10pt;")
+
+        self.btn_toggle_api = QPushButton("Iniciar Servidor API")
+        self.btn_toggle_api.clicked.connect(self.api_server_toggle_requested.emit)
+
+        api_layout.addWidget(self.api_console)
+        api_layout.addWidget(self.btn_toggle_api)
+
+        # Add to Splitter
+        self.sidebar_splitter.addWidget(self.year_tree)
+        self.sidebar_splitter.addWidget(self.api_panel)
+
+        # Initial proportions
+        self.sidebar_splitter.setStretchFactor(0, 3)
+        self.sidebar_splitter.setStretchFactor(1, 1)
+
+        sidebar_layout.addWidget(self.sidebar_splitter)
+        self.dock.setWidget(sidebar_container)
         self.addDockWidget(Qt.DockWidgetArea.LeftDockWidgetArea, self.dock)
 
     def _init_tabs(self):
