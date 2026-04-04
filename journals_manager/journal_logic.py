@@ -30,6 +30,20 @@ class JournalManager:
                     print(f"Error loading journal {filename}: {e}")
         return journals
 
+    def get_journal(self, journal_id):
+        filename = f"{journal_id}.json"
+        path = os.path.join(self.journals_dir, filename)
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                data['_filename'] = filename
+                return data
+        except Exception as e:
+            print(f"Error loading journal {filename}: {e}")
+            return None
+
     def _calculate_material_paths(self, material):
         title = material.get('title_material', '')
         season = material.get('season', '')
