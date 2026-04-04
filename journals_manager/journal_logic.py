@@ -76,13 +76,15 @@ class JournalManager:
             conn_y = sqlite3.connect(yearly_db)
             cursor_y = conn_y.cursor()
 
+            # Mapping based on typical storage in T_Resources
             col = ""
-            if type_res == "Episodio":
-                col = "relative_path_of_file"
-            elif type_res in ["Soundtrack", "Soundtrack SP"]:
+            if type_res in ["Soundtrack", "Soundtrack Sp"]:
                 col = "relative_path_of_soundtracks"
             elif type_res in ["Letra", "Lyrics"]:
                 col = "relative_path_of_lyrics"
+            else:
+                # Default mapping for episodes, movies, trailers, spinoffs, etc.
+                col = "relative_path_of_file"
 
             # 1. Path calculation
             if title != "[User selection]" and title and col:
@@ -95,7 +97,7 @@ class JournalManager:
                     results["path"] = full_path
 
             # 2. Lyric path calculation
-            if type_res in ["Soundtrack", "Soundtrack SP"] and title != "[User selection]" and title:
+            if type_res in ["Soundtrack", "Soundtrack Sp"] and title != "[User selection]" and title:
                 cursor_y.execute("SELECT relative_path_of_lyrics FROM T_Resources WHERE title_material = ?", (title,))
                 row_l = cursor_y.fetchone()
                 if row_l and row_l[0]:
@@ -115,11 +117,22 @@ class JournalManager:
                 first_file_rel = self.config.get_cache(cache_key)
 
                 if not first_file_rel:
-                    cursor_y.execute(f"SELECT {col} FROM T_Resources WHERE precure_season_name = ? AND {col} IS NOT NULL AND {col} != '' ORDER BY title_material ASC LIMIT 1", (season,))
-                    row_f = cursor_y.fetchone()
-                    if row_f:
-                        first_file_rel = row_f[0]
-                        self.config.set_cache(cache_key, first_file_rel)
+                    # In yearly db, we need to join with global db types or guess the integer ID
+                    # Since global_db is already opened once above (but closed),
+                    # let's just get the type_id from T_Type_Resources (global) first.
+                    conn_g_tmp = sqlite3.connect(global_db)
+                    cursor_g_tmp = conn_g_tmp.cursor()
+                    cursor_g_tmp.execute("SELECT idx FROM T_Type_Resources WHERE type_resource = ?", (type_res,))
+                    row_t = cursor_g_tmp.fetchone()
+                    conn_g_tmp.close()
+
+                    if row_t:
+                        type_id = row_t[0]
+                        cursor_y.execute(f"SELECT {col} FROM T_Resources WHERE precure_season_name = ? AND type_material = ? AND {col} IS NOT NULL AND {col} != '' ORDER BY title_material ASC LIMIT 1", (season, type_id))
+                        row_f = cursor_y.fetchone()
+                        if row_f:
+                            first_file_rel = row_f[0]
+                            self.config.set_cache(cache_key, first_file_rel)
 
                 if first_file_rel:
                     first_file_rel = first_file_rel.replace("\\", "/").strip()
