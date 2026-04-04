@@ -102,6 +102,13 @@ class APIServerThread(QThread):
             except Exception as e:
                 raise HTTPException(status_code=500, detail=str(e))
 
+        @self.app.get("/journal/{journal_id}")
+        async def get_journal(journal_id: str, _=Depends(self._check_allowed_dependency)):
+            journal = self.journal_manager.get_journal(journal_id)
+            if not journal:
+                raise HTTPException(status_code=404, detail="Journal not found")
+            return journal
+
         @self.app.get("/downloads")
         async def download_file(
             path: str = Query(..., description="Virtual path of the file"),
