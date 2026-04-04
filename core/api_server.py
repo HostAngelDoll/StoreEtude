@@ -1,11 +1,9 @@
 import os
-import sqlite3
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.responses import FileResponse
 from PyQt6.QtCore import QThread
 from datetime import datetime
-from typing import List, Optional
 
 from core.config_manager import ConfigManager
 from core.whitelist_manager import WhitelistManager
@@ -42,9 +40,27 @@ class APIServerThread(QThread):
             raise HTTPException(status_code=503, detail="External drive disconnected. Resource exposure unavailable.")
 
     def _setup_routes(self):
+        @self.app.get("/ping")
+        async def ping():
+            return {
+                "name": "StoreEtude",
+                "version": "1.0"
+            }
+
+        @self.app.get("/health")
+        async def health():
+            if not self._is_drive_connected():
+                return {
+                    "status": "error",
+                    "detail": "storage not available"
+                }
+            return {
+                "status": "ok"
+            }
+
         @self.app.get("/journals_sync")
         @self.app.get("/jorunals_sync")  # Support the typo version too
-        async def journals_sync(allowed=Depends(self._check_allowed_dependency)):
+        async def journals_sync(_=Depends(self._check_allowed_dependency)):
             try:
                 journals = self.journal_manager.list_journals()
 
@@ -87,8 +103,8 @@ class APIServerThread(QThread):
         @self.app.get("/downloads")
         async def download_file(
             path: str = Query(..., description="Virtual path of the file"),
-            allowed=Depends(self._check_allowed_dependency),
-            drive=Depends(self._check_drive_dependency)
+            _=Depends(self._check_allowed_dependency),
+            __=Depends(self._check_drive_dependency)
         ):
             base_dir = os.path.normpath(get_base_dir_path())
 
@@ -113,8 +129,8 @@ class APIServerThread(QThread):
         @self.app.get("/download/list") # Support both as requested in different parts of prompt
         async def list_downloads(
             path: str = Query(..., alias="path", description="Virtual path of the directory"),
-            allowed=Depends(self._check_allowed_dependency),
-            drive=Depends(self._check_drive_dependency)
+            _=Depends(self._check_allowed_dependency),
+            __=Depends(self._check_drive_dependency)
         ):
             base_dir = os.path.normpath(get_base_dir_path())
 
