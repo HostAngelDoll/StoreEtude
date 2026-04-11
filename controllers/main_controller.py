@@ -407,9 +407,9 @@ class MainController(QObject):
             self.win.btn_toggle_api.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;") # Green
 
         if self.config.get("api.enabled", False):
-            if not running:
-                self.api_server_thread.start()
-                # update_api_server_status will be called again on signal or by caller
+            if not running and not self.api_server_thread.isFinished():
+                # Avoid infinite restart loop if it just failed
+                pass
 
     def toggle_api_server(self):
         if self.api_server_thread.isRunning():

@@ -165,7 +165,7 @@ class JournalManager:
                     if parts:
                         last_part = parts[-1]
                         # Replace 'soundtracks' with 'lyrics' preserving any prefix like '03. '
-                        new_last = last_part.replace("soundtracks", "lyrics").replace("Soundtracks", "Lyrics").replace("soundtrack", "lyrics")
+                        new_last = last_part.replace("soundtracks", "lyrics").replace("Soundtracks", "Lyrics").replace("soundtrack", "lyrics").replace("Soundtrack", "Lyrics")
                         parts[-1] = new_last
                         ls_path = "/".join(parts) + "/"
                         while "//" in ls_path: ls_path = ls_path.replace("//", "/")

@@ -2,7 +2,7 @@ import os
 import uvicorn
 import time
 from fastapi import FastAPI, HTTPException, Query, Depends, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from PyQt6.QtCore import QThread, pyqtSignal
 from datetime import datetime
 
@@ -49,9 +49,16 @@ class APIServerThread(QThread):
     def _setup_logging(self):
         @self.app.middleware("http")
         async def log_requests(request: Request, call_next):
+            # Block EVERYTHING if network not allowed
+            if not self._is_allowed():
+                method = request.method
+                path = request.url.path
+                log_msg = f"[{method}] {path} -> 403 (Acceso denegado: Red no confiable)"
+                self.log_message.emit(log_msg, True)
+                return JSONResponse(status_code=403, content={"detail": "Unauthorized network"})
+
             start_time = time.time()
             response = await call_next(request)
-            process_time = (time.time() - start_time) * 1000
 
             # Format: [GET] /downloads?path=/xxx -> 200
             method = request.method
@@ -201,6 +208,13 @@ class APIServerThread(QThread):
 
     def run(self):
         self.config.load()
+
+        # Security check before starting
+        if not self._is_allowed():
+            self.log_message.emit("No se puede iniciar el servidor: Red actual no está en la lista blanca.", True)
+            self.running = False
+            return
+
         port = self.config.get("api.port", 9090)
         self.running = True
 
