@@ -35,6 +35,8 @@ class MainWindow(QMainWindow):
     add_row_requested = pyqtSignal()
     resize_requested = pyqtSignal()
     api_server_toggle_requested = pyqtSignal()
+    save_api_logs_requested = pyqtSignal()
+    clear_api_console_requested = pyqtSignal()
     closed = pyqtSignal()
 
     def __init__(self):
@@ -166,8 +168,19 @@ class MainWindow(QMainWindow):
         self.btn_toggle_api = QPushButton("Iniciar Servidor API")
         self.btn_toggle_api.clicked.connect(self.api_server_toggle_requested.emit)
 
+        # Bottom buttons for console management
+        console_btns_layout = QHBoxLayout()
+        self.btn_save_logs = QPushButton("Guardar logs")
+        self.btn_save_logs.clicked.connect(self.save_api_logs_requested.emit)
+        self.btn_clear_console = QPushButton("Limpiar consola")
+        self.btn_clear_console.clicked.connect(self.clear_api_console_requested.emit)
+
+        console_btns_layout.addWidget(self.btn_save_logs)
+        console_btns_layout.addWidget(self.btn_clear_console)
+
         api_layout.addWidget(self.api_console)
         api_layout.addWidget(self.btn_toggle_api)
+        api_layout.addLayout(console_btns_layout)
 
         # Add to Splitter
         self.sidebar_splitter.addWidget(self.year_tree)

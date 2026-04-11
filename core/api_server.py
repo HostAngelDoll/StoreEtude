@@ -1,5 +1,6 @@
 import os
 import uvicorn
+import time
 from fastapi import FastAPI, HTTPException, Query, Depends, Request
 from fastapi.responses import FileResponse
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -19,6 +20,7 @@ class APIServerThread(QThread):
         self.whitelist_manager = WhitelistManager()
         self.journal_manager = JournalManager()
         self.app = FastAPI(title="StoreEtude API")
+        self._setup_logging()
         self._setup_routes()
         self.running = False
         self.server = None
@@ -43,6 +45,27 @@ class APIServerThread(QThread):
     def _check_drive_dependency(self):
         if not self._is_drive_connected():
             raise HTTPException(status_code=503, detail="External drive disconnected. Resource exposure unavailable.")
+
+    def _setup_logging(self):
+        @self.app.middleware("http")
+        async def log_requests(request: Request, call_next):
+            start_time = time.time()
+            response = await call_next(request)
+            process_time = (time.time() - start_time) * 1000
+
+            # Format: [GET] /downloads?path=/xxx -> 200
+            method = request.method
+            path = request.url.path
+            query = request.url.query
+            status_code = response.status_code
+
+            full_path = f"{path}?{query}" if query else path
+            log_msg = f"[{method}] {full_path} -> {status_code}"
+
+            # Emit log via signal. status >= 400 is considered error for coloring
+            self.log_message.emit(log_msg, status_code >= 400)
+
+            return response
 
     def _setup_routes(self):
         @self.app.get("/ping")

@@ -52,7 +52,8 @@ class JournalManager:
         results = {
             "path": "",
             "lyric_path": "",
-            "summon_path": ""
+            "summon_path": "",
+            "lyric_summon_path": ""
         }
 
         if not season:
@@ -156,6 +157,19 @@ class JournalManager:
             if summon_rel:
                 while "//" in summon_rel: summon_rel = summon_rel.replace("//", "/")
                 results["summon_path"] = summon_rel
+
+                if type_res in ["Soundtrack", "Soundtrack Sp"]:
+                    # Rule: Same base as summon_path, but change last directory to /lyrics/
+                    # Example: .../03. soundtracks/ -> .../03. lyrics/
+                    parts = results["summon_path"].rstrip("/").split("/")
+                    if parts:
+                        last_part = parts[-1]
+                        # Replace 'soundtracks' with 'lyrics' preserving any prefix like '03. '
+                        new_last = last_part.replace("soundtracks", "lyrics").replace("Soundtracks", "Lyrics").replace("soundtrack", "lyrics")
+                        parts[-1] = new_last
+                        ls_path = "/".join(parts) + "/"
+                        while "//" in ls_path: ls_path = ls_path.replace("//", "/")
+                        results["lyric_summon_path"] = ls_path
 
             conn_y.close()
             return results
