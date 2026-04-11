@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from PyQt6.QtWidgets import QApplication, QProgressDialog, QDialog
+from PyQt6.QtWidgets import QApplication, QProgressDialog, QDialog, QFileDialog
 from PyQt6.QtCore import Qt, QThread, QTimer, QObject
 
 from core.db_manager_utils import get_base_dir_path, get_yearly_db_path, refresh_config_paths
@@ -64,6 +64,8 @@ class MainController(QObject):
         self.win.open_config_folder_requested.connect(self.on_open_config_folder_requested)
         self.win.save_requested.connect(self.save_settings)
         self.win.api_server_toggle_requested.connect(self.toggle_api_server)
+        self.win.save_api_logs_requested.connect(self.save_api_logs)
+        self.win.clear_api_console_requested.connect(self.clear_api_console)
         self.win.export_requested.connect(self.export_active_tab)
         self.win.import_requested.connect(self.import_active_tab)
         self.win.add_row_requested.connect(self.add_row_to_active_tab)
@@ -398,25 +400,52 @@ class MainController(QObject):
         running = self.api_server_thread.isRunning()
         self.win.btn_toggle_api.setText("Detener Servidor API" if running else "Iniciar Servidor API")
 
+        # Color styling
+        if running:
+            self.win.btn_toggle_api.setStyleSheet("background-color: #f44336; color: white; font-weight: bold;") # Red
+        else:
+            self.win.btn_toggle_api.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;") # Green
+
         if self.config.get("api.enabled", False):
-            if not running:
-                self.api_server_thread.start()
-                self.win.btn_toggle_api.setText("Detener Servidor API")
+            if not running and not self.api_server_thread.isFinished():
+                # Avoid infinite restart loop if it just failed
+                pass
 
     def toggle_api_server(self):
         if self.api_server_thread.isRunning():
             self.api_server_thread.stop()
             self.config.set("api.enabled", False)
-            self.win.btn_toggle_api.setText("Iniciar Servidor API")
         else:
             self.api_server_thread.start()
             self.config.set("api.enabled", True)
-            self.win.btn_toggle_api.setText("Detener Servidor API")
+
+        # Give it a tiny bit of time for state to change or just update UI immediately
+        # APIServerThread emits log which usually helps, but let's force UI update
+        QTimer.singleShot(100, self.update_api_server_status)
 
     def on_api_log(self, message, is_error):
         color = "#ff0000" if is_error else "#00ff00"
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.win.api_console.append(f'<span style="color: #888888;">[{timestamp}]</span> <span style="color: {color};">{message}</span>')
+        self.update_api_server_status()
+
+    def save_api_logs(self):
+        content = self.win.api_console.toPlainText()
+        if not content:
+            self.win.show_error("La consola está vacía.")
+            return
+
+        path, _ = QFileDialog.getSaveFileName(self.win, "Guardar logs de API", "", "Archivos de texto (*.txt)")
+        if path:
+            try:
+                with open(path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                self.win.show_info(f"Logs guardados correctamente en: {path}")
+            except Exception as e:
+                self.win.show_error(f"Error al guardar logs: {e}")
+
+    def clear_api_console(self):
+        self.win.api_console.clear()
 
     def load_settings(self):
         self.win.dock.setVisible(self.config.get("ui.sidebar_visible", True))
