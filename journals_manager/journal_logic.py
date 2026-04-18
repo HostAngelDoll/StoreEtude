@@ -255,6 +255,28 @@ class JournalManager:
             json.dump(data, f, indent=4)
         return True
 
+    def update_journal_progress(self, journal_id, material_updates):
+        filename = f"{journal_id}.json"
+        path = os.path.join(self.journals_dir, filename)
+        if not os.path.exists(path):
+            return False
+
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            # Reemplazo completo de materiales
+            data['materiales'] = material_updates
+            data['updated_at'] = datetime.now().isoformat()
+            # Note: 'vertion' is NOT incremented as per requirement
+
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=4)
+            return True
+        except Exception as e:
+            print(f"Error updating journal progress: {e}")
+            return False
+
     def categorize_journals(self):
         journals = self.list_journals()
         # Sort by fecha_esperada

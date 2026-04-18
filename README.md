@@ -8,7 +8,7 @@
 [![Framework](https://img.shields.io/badge/UI-PyQt6-green.svg)](https://www.riverbankcomputing.com/software/pyqt/)
 [![Architecture](https://img.shields.io/badge/Architecture-MVC%20%2B%20Services-orange.svg)](#architecture)
 
-Precure Media Manager is a comprehensive desktop application designed for the management and tracking of multimedia resources (episodes, movies, soundtracks) related to the Precure franchise. It features a robust SQLite-based yearly database architecture, Telegram integration for automated downloads, Firebase synchronization, and an internal REST API.
+Precure Media Manager is a comprehensive desktop application designed for the management and tracking of multimedia resources (episodes, movies, soundtracks) related to the Precure franchise. It features a robust SQLite-based yearly database architecture, Telegram integration for automated downloads, and an internal REST API.
 
 ---
 
@@ -33,12 +33,11 @@ Precure Media Manager is a comprehensive desktop application designed for the ma
 
 ### 🌐 Connectivity & Integration
 *   **Telegram Downloader:** Dedicated bot integration (`Telethon`) for downloading resources directly from chats.
-*   **Firebase Sync:** Bidirectional synchronization of "Journals" (Viewing Agendas) via Firebase Admin SDK.
-*   **Internal REST API:** Flask-powered server (Waitress) for programmatic resource queries and database access.
-*   **Security:** Network-based whitelisting (SSID/BSSID/Gateway) to control API and Firebase access.
+*   **Internal REST API:** FastAPI server for programmatic resource queries, database access, and journal management.
+*   **Security:** Network-based whitelisting (SSID/BSSID/Gateway) to control API access.
 
 ### 📝 Journal System (Viewing Agenda)
-The application manages "Journals" for viewing schedules, synchronized via Firebase. A typical journal entry follows this structure:
+The application manages "Journals" for viewing schedules. A typical journal entry follows this structure:
 
 ```json
 {
@@ -96,7 +95,7 @@ The project follows a strict **Layered MVC (Model-View-Controller)** pattern com
 |------------------|----------------|
 | `main.pyw` | Main entry point for the GUI application. |
 | `controllers/` | Orchestrators (`MainController`, `TelegramController`) that coordinate flow between UI and Services. |
-| `core/` | Cross-cutting concerns: `ConfigManager`, `APIServer`, `FirebaseManager`, and low-level resource logic. |
+| `core/` | Cross-cutting concerns: `ConfigManager`, `APIServer`, and low-level resource logic. |
 | `db/` | Low-level SQLite connection management (`QSqlDatabase`) and session/year context handling. |
 | `services/` | Encapsulated business services (e.g., `ScannerService`, `MigrationService`, `SyncService`). |
 | `ui/` | Core UI components: `MainWindow`, `ActionsManager`, and modular table widgets in `ui/table/`. |
@@ -159,7 +158,6 @@ Isolated databases for each year (2004 - Present):
 The application centralizes its configuration in a `config.json` file managed by `ConfigManager`.
 
 *   **Telegram:** Requires `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org).
-*   **Firebase:** Requires a service account JSON file and the Realtime Database URL.
 *   **API:** Port and toggle available in the "Servidor API" settings tab.
 
 ---
@@ -193,12 +191,11 @@ Sistema integral de gestión de recursos multimedia para la franquicia Precure. 
 
 ### 🌐 Integración y Conectividad
 *   **Descargador Telegram:** Integración con `Telethon` para descarga directa de recursos desde chats.
-*   **Sincronización Firebase:** Sincronización bidireccional de "Jornadas" (Agendas de visualización).
-*   **API REST Interna:** Servidor Flask (Waitress) para consultas programáticas y acceso a datos.
+*   **API REST Interna:** Servidor FastAPI para consultas programáticas, acceso a datos y gestión de jornadas.
 *   **Seguridad:** Lista blanca de redes (SSID/BSSID) para control de acceso a servicios externos.
 
 ### 📝 Sistema de Jornadas (Agenda de Visualización)
-La aplicación gestiona "Jornadas" para programar visualizaciones, sincronizadas a través de Firebase. Una entrada típica de jornada sigue esta estructura:
+La aplicación gestiona "Jornadas" para programar visualizaciones. Una entrada típica de jornada sigue esta estructura:
 
 ```json
 {
@@ -246,7 +243,7 @@ El proyecto implementa un patrón **MVC por Capas** junto con una **Capa de Serv
 |----------------------|----------------|
 | `main.pyw` | Punto de entrada principal para la aplicación GUI. |
 | `controllers/` | Orquestadores (`MainController`, `TelegramController`) que coordinan el flujo entre la UI y los Servicios. |
-| `core/` | Lógica transversal: `ConfigManager`, `APIServer`, `FirebaseManager` y lógica de recursos de bajo nivel. |
+| `core/` | Lógica transversal: `ConfigManager`, `APIServer` y lógica de recursos de bajo nivel. |
 | `db/` | Gestión de conexiones SQLite (`QSqlDatabase`) y manejo de contexto de sesión/año. |
 | `services/` | Servicios de negocio encapsulados (ej. `ScannerService`, `MigrationService`, `SyncService`). |
 | `ui/` | Componentes de UI principales: `MainWindow`, `ActionsManager` y widgets de tabla modulares en `ui/table/`. |
