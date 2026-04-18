@@ -62,11 +62,6 @@ class ConfigManager:
             "api": {
                 "enabled": False,
                 "port": 9090
-            },
-            "firebase": {
-                "db_url": "",
-                "db_ref_journals": "",
-                "credentials_path": ""
             }
         }
         self.load()
@@ -251,14 +246,6 @@ class ConfigManager:
             old_whitelist = os.path.join(old_dir, "whitelist.json")
             if os.path.exists(old_whitelist):
                 shutil.move(old_whitelist, os.path.join(new_dir, "whitelist.json"))
-
-            # Move firebase credentials if they exist and are inside the config dir
-            old_creds = self.get("firebase.credentials_path")
-            if old_creds and old_creds.startswith(old_dir):
-                new_creds = old_creds.replace(old_dir, new_dir)
-                os.makedirs(os.path.dirname(new_creds), exist_ok=True)
-                shutil.move(old_creds, new_creds)
-                self.set("firebase.credentials_path", new_creds, save=False)
 
             # Update paths in memory
             self.config_path = new_path

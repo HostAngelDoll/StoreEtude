@@ -139,6 +139,27 @@ class APIServerThread(QThread):
                 raise HTTPException(status_code=404, detail="Journal not found")
             return journal
 
+        @self.app.put("/journal/{journal_id}")
+        async def update_journal(journal_id: str, request: Request, _=Depends(self._check_allowed_dependency)):
+            try:
+                data = await request.json()
+                material_updates = data.get("materiales")
+                if material_updates is None:
+                    raise HTTPException(status_code=400, detail="Missing 'materiales' in request body")
+
+                success = self.journal_manager.update_journal_progress(journal_id, material_updates)
+                if not success:
+                    # Could be not found or other error
+                    if not self.journal_manager.get_journal(journal_id):
+                        raise HTTPException(status_code=404, detail="Journal not found")
+                    raise HTTPException(status_code=500, detail="Failed to update journal")
+
+                return {"status": "success"}
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON or request: {str(e)}")
+
         @self.app.get("/downloads")
         async def download_file(
             path: str = Query(..., description="Virtual path of the file"),

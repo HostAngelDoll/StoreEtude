@@ -86,7 +86,6 @@ class MainController(QObject):
         if self.state.mode == AppMode.ONLINE:
             self.run_startup_sync()
 
-        self.sync_firebase_journals()
         self.update_api_server_status()
 
     def init_db_connections(self):
@@ -157,7 +156,6 @@ class MainController(QObject):
         self.sync_service.perform_sync(tasks, update_sync_progress, on_finished)
 
     def on_report_materials_requested(self):
-        self.sync_firebase_journals()
         dialog = ReportMaterialsDialog(self.win)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.win.registry_tab.model.select()
@@ -166,7 +164,6 @@ class MainController(QObject):
         self.tg_controller.show_download_dialog()
 
     def on_manage_journals_requested(self):
-        self.sync_firebase_journals()
         dialog = JournalAdminDialog(self.win)
         dialog.exec()
 
@@ -382,19 +379,6 @@ class MainController(QObject):
             return
         self.db_service.recalculate_models("year_db")
         self.win.registry_tab.model.select(); self.win.show_info("Modelos recalculados.", "Modelos")
-
-    def sync_firebase_journals(self):
-        def update_fb_progress(cur, tot, lbl):
-            progress.setMaximum(tot); progress.setValue(cur); progress.setLabelText(lbl)
-            QApplication.processEvents()
-
-        progress = self.win.create_progress_dialog("Sincronizando jornadas con Firebase...", title="Firebase Sync", cancelable=False)
-        progress.show()
-        success, msg = self.sync_service.sync_firebase_journals(progress_callback=update_fb_progress)
-        progress.close()
-
-        if not success: self.win.log(f"Firebase Sync Error: {msg}", is_error=True)
-        else: self.win.log(msg)
 
     def update_api_server_status(self):
         running = self.api_server_thread.isRunning()

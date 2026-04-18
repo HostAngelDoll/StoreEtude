@@ -157,36 +157,6 @@ class SettingsDialog(QDialog):
         api_layout_v.addStretch()
         self.tabs.addTab(api_tab, "Servidor API")
 
-        # --- Tab: Firebase ---
-        fb_tab = QWidget()
-        fb_layout_v = QVBoxLayout(fb_tab)
-        fb_group = QGroupBox("Firebase Connector")
-        fb_form = QFormLayout()
-
-        self.fb_url_edit = QLineEdit(self.config.get("firebase.db_url", ""))
-        self.fb_url_edit.textChanged.connect(self.update_fb_btns_state)
-        fb_form.addRow("URL de Base de Datos:", self.fb_url_edit)
-
-        self.fb_ref_edit = QLineEdit(self.config.get("firebase.db_ref_journals", ""))
-        fb_form.addRow("Referencia Jornadas:", self.fb_ref_edit)
-
-        self.fb_creds_label = QLabel()
-        self.update_fb_creds_label(self.config.get("firebase.credentials_path", ""))
-
-        self.btn_browse_fb_creds = QPushButton("Anexar Credenciales JSON")
-        self.btn_browse_fb_creds.clicked.connect(self.browse_fb_creds)
-
-        fb_creds_h_layout = QHBoxLayout()
-        fb_creds_h_layout.addWidget(self.fb_creds_label)
-        fb_creds_h_layout.addStretch()
-        fb_creds_h_layout.addWidget(self.btn_browse_fb_creds)
-        fb_form.addRow("Credenciales:", fb_creds_h_layout)
-
-        fb_group.setLayout(fb_form)
-        fb_layout_v.addWidget(fb_group)
-        fb_layout_v.addStretch()
-        self.tabs.addTab(fb_tab, "Firebase")
-
         # --- Tab: Seguridad ---
         sec_tab = QWidget()
         sec_layout_v = QVBoxLayout(sec_tab)
@@ -316,30 +286,6 @@ class SettingsDialog(QDialog):
         if file_path:
             self.global_db_edit.setText(file_path)
 
-    def browse_fb_creds(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Seleccionar Credenciales Firebase", "", "JSON (*.json)")
-        if file_path:
-            self.update_fb_creds_label(file_path)
-
-    def update_fb_creds_label(self, path):
-        if not path:
-            self.fb_creds_label.setText('<span style="color: grey;">No seleccionado</span>')
-            self._fb_creds_path = ""
-            return
-
-        from core.firebase_manager import FirebaseManager
-        fm = FirebaseManager()
-        if fm.validate_credentials(path):
-            self.fb_creds_label.setText('<span style="color: green;">Válido</span>')
-            self._fb_creds_path = path
-        else:
-            self.fb_creds_label.setText('<span style="color: red;">Inválido</span>')
-            self._fb_creds_path = ""
-
-    def update_fb_btns_state(self):
-        url = self.fb_url_edit.text().strip()
-        self.btn_browse_fb_creds.setEnabled(bool(url))
-
     def move_config_json(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "Mover archivo de ajustes", self.config_path_edit.text(), "JSON (*.json)")
         if file_path:
@@ -410,11 +356,6 @@ class SettingsDialog(QDialog):
         try:
             self.config.set("api.port", int(self.api_port_edit.text()), save=False)
         except: pass
-
-        # Firebase
-        self.config.set("firebase.db_url", self.fb_url_edit.text(), save=False)
-        self.config.set("firebase.db_ref_journals", self.fb_ref_edit.text(), save=False)
-        self.config.set("firebase.credentials_path", getattr(self, '_fb_creds_path', ""), save=False)
 
         self.config.set("telegram.api_id", self.api_id_edit.text(), save=False)
         self.config.set("telegram.api_hash", self.api_hash_edit.text(), save=False)

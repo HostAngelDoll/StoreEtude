@@ -3,5 +3,4 @@ PyQt6
 telethon
 fastapi
 uvicorn
-firebase-admin
 python-multipart
