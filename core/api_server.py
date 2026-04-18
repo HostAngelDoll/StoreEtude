@@ -147,6 +147,9 @@ class APIServerThread(QThread):
                 if material_updates is None:
                     raise HTTPException(status_code=400, detail="Missing 'materiales' in request body")
 
+                if not isinstance(material_updates, list):
+                    raise HTTPException(status_code=400, detail="'materiales' must be a list")
+
                 success = self.journal_manager.update_journal_progress(journal_id, material_updates)
                 if not success:
                     # Could be not found or other error
